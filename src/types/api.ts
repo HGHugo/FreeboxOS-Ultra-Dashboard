@@ -1,0 +1,389 @@
+// Generic API response type
+export interface ApiResponse<T = unknown> {
+  success: boolean;
+  result?: T;
+  error?: {
+    code: string;
+    message: string;
+  };
+}
+
+// Auth types
+export interface AuthStatus {
+  isRegistered: boolean;
+  isLoggedIn: boolean;
+  permissions: Permissions;
+}
+
+export interface Permissions {
+  settings?: boolean;
+  contacts?: boolean;
+  calls?: boolean;
+  explorer?: boolean;
+  downloader?: boolean;
+  parental?: boolean;
+  pvr?: boolean;
+  vm?: boolean;
+  camera?: boolean;
+  profile?: boolean;
+  player?: boolean;
+  tv?: boolean;
+  home?: boolean;
+}
+
+export interface RegistrationStatus {
+  status: 'unknown' | 'pending' | 'timeout' | 'granted' | 'denied';
+  challenge?: string;
+}
+
+// System types
+export interface SystemInfo {
+  firmware_version: string;
+  mac: string;
+  serial: string;
+  uptime: string;
+  uptime_val: number;
+  board_name: string;
+  // Temperature fields - varies by Freebox model
+  temp_cpum?: number;      // Older Freebox models
+  temp_sw?: number;        // Older models
+  temp_cpub?: number;      // Older models
+  temp_cpu0?: number;      // Freebox v9+
+  temp_cpu1?: number;      // Freebox v9+
+  temp_cpu2?: number;      // Freebox v9+
+  temp_cpu3?: number;      // Freebox v9+
+  fan_rpm: number;
+  box_authenticated: boolean;
+  disk_status: string;
+  box_flavor: string;
+  user_main_storage: string;
+  // Added from api_version endpoint
+  box_model_name?: string; // e.g. "Freebox v9 (r1)"
+  device_name?: string;
+  api_version?: string;
+}
+
+// Connection types
+export interface ConnectionStatus {
+  state: 'up' | 'down' | 'going_up' | 'going_down';
+  type: string;
+  media: string;
+  ipv4: string;
+  ipv6: string;
+  rate_down: number;
+  rate_up: number;
+  bandwidth_down: number;
+  bandwidth_up: number;
+  bytes_down: number;
+  bytes_up: number;
+}
+
+export interface RrdDataPoint {
+  time: number;
+  [key: string]: number;
+}
+
+export interface RrdResponse {
+  date_start: number;
+  date_end: number;
+  data: RrdDataPoint[];
+}
+
+// WiFi types
+export interface WifiConfig {
+  enabled: boolean;
+  mac_filter_state: 'disabled' | 'whitelist' | 'blacklist';
+}
+
+export interface WifiAp {
+  id: number;
+  name: string;
+  status: {
+    state: string;
+    channel_width: number;
+    primary_channel: number;
+    secondary_channel: number;
+    dfs_cac_remaining_time: number;
+  };
+  config: {
+    band: '2.4g' | '5g' | '6g' | '60g';
+    channel_width: string;
+    primary_channel: number;
+    secondary_channel: number;
+  };
+}
+
+export interface WifiBss {
+  id: string;
+  phy_id: number;
+  status: {
+    state: string;
+    sta_count: number;
+    is_main_bss: boolean;
+  };
+  config: {
+    enabled: boolean;
+    use_default_config: boolean;
+    ssid: string;
+    hide_ssid: boolean;
+    encryption: string;
+  };
+}
+
+export interface WifiStation {
+  id: string;
+  mac: string;
+  bssid: string;
+  hostname: string;
+  host?: LanHost;
+  state: string;
+  inactive: number;
+  conn_duration: number;
+  rx_rate: number;
+  tx_rate: number;
+  rx_bytes: number;
+  tx_bytes: number;
+  signal: number;
+}
+
+// LAN types
+export interface LanInterface {
+  name: string;
+  host_count: number;
+}
+
+export interface LanHostAccessPoint {
+  mac: string;
+  type: 'gateway' | 'repeater';
+  uid: string;
+  connectivity_type: 'wifi' | 'ethernet';
+  rx_bytes: number;
+  tx_bytes: number;
+  rx_rate: number;  // bytes/s
+  tx_rate: number;  // bytes/s
+  ethernet_information?: {
+    duplex: string;
+    speed: number;
+    max_port_speed: number;
+    link: string;
+  };
+  wifi_information?: {
+    band: string;
+    sess_duration: number;
+    phy_rx_rate: number;
+    phy_tx_rate: number;
+    ssid: string;
+    standard: string;
+    bssid: string;
+    signal: number;
+  };
+}
+
+export interface LanHost {
+  id: string;
+  primary_name: string;
+  host_type: string;
+  primary_name_manual: boolean;
+  l2ident: {
+    id: string;
+    type: string;
+  };
+  vendor_name: string;
+  persistent: boolean;
+  reachable: boolean;
+  last_time_reachable: number;
+  active: boolean;
+  last_activity: number;
+  first_activity: number;
+  names: { name: string; source: string }[];
+  l3connectivities: {
+    addr: string;
+    af: 'ipv4' | 'ipv6';
+    active: boolean;
+    reachable: boolean;
+    last_activity: number;
+    last_time_reachable: number;
+  }[];
+  interface?: string;
+  access_point?: LanHostAccessPoint;
+}
+
+// Download types
+export interface Download {
+  id: number;
+  type: 'bt' | 'http' | 'ftp' | 'nzb';
+  name: string;
+  status: 'queued' | 'starting' | 'downloading' | 'stopping' | 'stopped' | 'error' | 'done' | 'checking' | 'repairing' | 'extracting' | 'seeding' | 'retry';
+  io_priority: 'low' | 'normal' | 'high';
+  size: number;
+  queue_pos: number;
+  tx_bytes: number;
+  rx_bytes: number;
+  tx_rate: number;
+  rx_rate: number;
+  tx_pct: number;
+  rx_pct: number;
+  error: string;
+  created_ts: number;
+  eta: number;
+  download_dir: string;
+  stop_ratio: number;
+  archive_password: string;
+  info_hash: string;
+  piece_length: number;
+}
+
+export interface DownloadStats {
+  nb_tasks: number;
+  nb_tasks_stopped: number;
+  nb_tasks_active: number;
+  nb_tasks_done: number;
+  nb_tasks_error: number;
+  rx_rate: number;
+  tx_rate: number;
+  nb_rss: number;
+  nb_rss_items_unread: number;
+}
+
+export interface DownloadTracker {
+  announce: string;
+  is_enabled: boolean;
+  status: string;
+  leechers: number;
+  seeders: number;
+}
+
+export interface DownloadPeer {
+  host: string;
+  port: number;
+  client: string;
+  rx_rate: number;
+  tx_rate: number;
+  rx_pct: number;
+  tx_pct: number;
+}
+
+// VM types
+export interface VirtualMachine {
+  id: number;
+  name: string;
+  os: string;
+  status: 'stopped' | 'starting' | 'running' | 'stopping';
+  vcpus: number;
+  memory: number;
+  disk_path: string;
+  disk_type: string;
+  enable_screen: boolean;
+  // Extended stats (may not always be available)
+  cpu_usage?: number;
+  memory_usage?: number;
+  disk_usage?: number;
+}
+
+// TV Channel types
+export interface TvChannel {
+  uuid: string;
+  name: string;
+  number: number;
+  logo_url?: string;
+  quality?: string;
+  bouquet?: string;
+}
+
+export interface TvBouquet {
+  id: number;
+  name: string;
+  channels: string[]; // UUIDs
+}
+
+// PVR (Recording) types
+export interface PvrRecording {
+  id: number;
+  name: string;
+  path: string;
+  media_id: number;
+  duration: number;
+  byte_size: number;
+  channel_uuid: string;
+  channel_name?: string;
+  channel_type: string;
+  channel_quality: string;
+  broadcast_type: string;
+  record_gen_id: number;
+  start: number;
+  end: number;
+  sub_name?: string;
+  episode?: number;
+  season?: number;
+  state?: 'finished' | 'starting' | 'running' | 'stopped' | 'failed';
+  error?: string;
+}
+
+export interface PvrProgrammed {
+  id: number;
+  enabled: boolean;
+  channel_uuid: string;
+  channel_name?: string;
+  channel_type: string;
+  channel_quality: string;
+  name: string;
+  sub_name?: string;
+  episode?: number;
+  season?: number;
+  start: number;
+  end: number;
+  margin_before: number;
+  margin_after: number;
+  repeat_monday?: boolean;
+  repeat_tuesday?: boolean;
+  repeat_wednesday?: boolean;
+  repeat_thursday?: boolean;
+  repeat_friday?: boolean;
+  repeat_saturday?: boolean;
+  repeat_sunday?: boolean;
+  state?: 'waiting' | 'starting' | 'running' | 'finished' | 'error';
+  record_gen_id?: number;
+  media_id?: number;
+}
+
+export interface PvrConfig {
+  enabled: boolean;
+  max_time_shift: number;
+  storage_path: string;
+}
+
+// Call types
+export interface CallEntry {
+  id: number;
+  type: 'accepted' | 'incoming' | 'missed' | 'outgoing';
+  datetime: number;
+  number: string;
+  name?: string;
+  duration: number;
+  new: boolean;
+  contact_id?: number;
+}
+
+// Contact types
+export interface ContactNumber {
+  id?: number;
+  contact_id?: number;
+  type: 'home' | 'work' | 'mobile' | 'fax' | 'other' | string;
+  number: string;
+  is_default?: boolean;
+  is_own?: boolean;
+}
+
+export interface Contact {
+  id: number;
+  display_name: string;
+  first_name?: string;
+  last_name?: string;
+  company?: string;
+  birthday?: string;
+  notes?: string;
+  photo_url?: string;
+  last_update?: number;
+  // Numbers can be included when fetching contact details
+  numbers?: ContactNumber[];
+}
