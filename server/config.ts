@@ -22,7 +22,7 @@ export const config = {
     requestTimeout: 10000,
 
     // Token storage file
-    tokenFile: '.freebox_token'
+    tokenFile: process.env.FREEBOX_TOKEN_FILE || '.freebox_token'
   }
 };
 

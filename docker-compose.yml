@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: freebox-dashboard
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - SERVER_PORT=3001
+      - FREEBOX_URL=https://mafreebox.freebox.fr
+      # Location of the token file within the persistent volume
+      - FREEBOX_TOKEN_FILE=/app/data/.freebox_token
+    volumes:
+      # Persist authentication token
+      - freebox_data:/app/data
+    # NETWORK CONFIGURATION NOTE:
+    # The user mandated that the container must access the router.
+    # On standard Docker Bridge network (default), the container CAN access the router
+    # (usually via gateway IP or just routing to 192.168.1.254).
+    #
+    # HOWEVER, for best compatibility specifically with local discovery or if you run this
+    # on a Linux server/Raspberry Pi, 'host' network mode is recommended.
+    #
+    # To use Host Network (Linux only recommended):
+    # 1. Comment out the 'ports' section above.
+    # 2. Uncomment the line below:
+    # network_mode: host
+
+volumes:
+  freebox_data:

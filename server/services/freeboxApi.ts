@@ -50,7 +50,7 @@ class FreeboxApiService {
 
   // Load app_token from file
   private loadToken() {
-    const tokenPath = path.join(process.cwd(), config.freebox.tokenFile);
+    const tokenPath = path.resolve(process.cwd(), config.freebox.tokenFile);
     if (fs.existsSync(tokenPath)) {
       try {
         const data = JSON.parse(fs.readFileSync(tokenPath, 'utf-8')) as TokenData;
@@ -64,7 +64,7 @@ class FreeboxApiService {
 
   // Save app_token to file
   private saveToken(appToken: string) {
-    const tokenPath = path.join(process.cwd(), config.freebox.tokenFile);
+    const tokenPath = path.resolve(process.cwd(), config.freebox.tokenFile);
     fs.writeFileSync(tokenPath, JSON.stringify({ appToken }), 'utf-8');
     this.appToken = appToken;
     console.log('[FreeboxAPI] Saved app_token to file');
