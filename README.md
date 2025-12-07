@@ -240,6 +240,28 @@ Acceder au dashboard depuis n'importe quel appareil du reseau :
 http://<IP_MACHINE>:3001
 ```
 
+### Option 3 : Docker (Recommandé pour NAS/Serveur)
+
+Cette application peut être facilement déployée via Docker.
+
+#### Prérequis
+- Docker et Docker Compose installés sur votre machine (NAS, Raspberry Pi, Serveur...)
+
+#### Lancement rapide
+
+1. Cloner le dépôt (si ce n'est pas déjà fait)
+2. Lancer la commande suivante :
+```bash
+docker-compose up -d
+```
+3. L'application est accessible sur `http://<IP_MACHINE>:3001`
+
+#### Configuration Docker avancée
+
+- **Accès routeur** : Par défaut, le conteneur utilise le réseau bridge.
+- **Mode Host** : Si vous rencontrez des problèmes de découverte réseau ou si vous installez sur un système Linux/Raspberry Pi, il est recommandé d'activer le mode `network_mode: host` dans `docker-compose.yml` (voir les commentaires dans le fichier).
+- **Persistance** : Le token d'authentification est sauvegardé dans un volume Docker nommé `freebox_data` pour éviter de devoir se reconnecter après chaque redémarrage.
+
 ## Architecture
 
 ```
