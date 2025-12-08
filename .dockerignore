@@ -1,0 +1,14 @@
+node_modules
+dist
+.git
+.gitignore
+*.log
+npm-debug.log*
+.env
+.env.*
+!.env.example
+.freebox_token
+img-capture
+.DS_Store
+*.md
+!README.md

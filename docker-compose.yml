@@ -1,32 +1,27 @@
-version: '3.8'
-
 services:
-  app:
+  freebox-dashboard:
     build: .
     container_name: freebox-dashboard
     restart: unless-stopped
     ports:
-      - "7505:3001"
+      - "${DASHBOARD_PORT:-7505}:3001"
     environment:
       - SERVER_PORT=3001
-      - FREEBOX_URL=https://mafreebox.freebox.fr
-      # Location of the token file within the persistent volume
+      - FREEBOX_URL=${FREEBOX_URL:-https://mafreebox.freebox.fr}
+      - FREEBOX_LOCAL_IP=${FREEBOX_LOCAL_IP:-192.168.1.254}
+      - FREEBOX_APP_ID=${FREEBOX_APP_ID:-fr.freeboxos.dashboard}
+      - FREEBOX_APP_NAME=${FREEBOX_APP_NAME:-Freebox Dashboard}
+      - FREEBOX_APP_VERSION=${FREEBOX_APP_VERSION:-1.0.0}
+      - FREEBOX_DEVICE_NAME=${FREEBOX_DEVICE_NAME:-Dashboard Docker}
       - FREEBOX_TOKEN_FILE=/app/data/.freebox_token
     volumes:
-      # Persist authentication token
       - freebox_data:/app/data
-    # NETWORK CONFIGURATION NOTE:
-    # The user mandated that the container must access the router.
-    # On standard Docker Bridge network (default), the container CAN access the router
-    # (usually via gateway IP or just routing to 192.168.1.254).
-    #
-    # HOWEVER, for best compatibility specifically with local discovery or if you run this
-    # on a Linux server/Raspberry Pi, 'host' network mode is recommended.
-    #
-    # To use Host Network (Linux only recommended):
-    # 1. Comment out the 'ports' section above.
-    # 2. Uncomment the line below:
-    # network_mode: host
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
 volumes:
   freebox_data:
