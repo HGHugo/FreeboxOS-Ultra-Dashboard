@@ -6,7 +6,7 @@ services:
     container_name: freebox-dashboard
     restart: unless-stopped
     ports:
-      - "3001:3001"
+      - "7505:3001"
     environment:
       - SERVER_PORT=3001
       - FREEBOX_URL=https://mafreebox.freebox.fr
