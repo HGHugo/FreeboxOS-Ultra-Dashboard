@@ -1,13 +1,27 @@
 import { Router } from 'express';
 import { freeboxApi } from '../services/freeboxApi.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
+import { ConnectionStatus } from '@/src/types/api.js';
 
 const router = Router();
 
 // GET /api/connection - Get connection status
 router.get('/', asyncHandler(async (_req, res) => {
-  const result = await freeboxApi.getConnectionStatus();
-  res.json(result);
+  const connectionResult = await freeboxApi.getConnectionStatus();
+
+  if (connectionResult.success && connectionResult.result) {
+    const conn = connectionResult.result as ConnectionStatus;
+    res.json({
+      success: true,
+      result: {
+        ...conn,
+        rate_down: conn.rate_down * 8,
+        rate_up: conn.rate_up * 8,
+      }
+    });
+  }
+  else
+    res.json(connectionResult);
 }));
 
 // GET /api/connection/config - Get connection config
