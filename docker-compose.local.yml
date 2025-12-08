@@ -15,7 +15,9 @@
 
 services:
   freebox-dashboard:
-    image: ghcr.io/hghugo/freeboxos-ultra-dashboard:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: freebox-dashboard
     restart: unless-stopped
 
@@ -32,7 +34,7 @@ services:
       # Optional: Mock mode for testing different Freebox models
       # - MOCK_FREEBOX_MODEL=ultra  # ultra, delta, pop, revolution
 
-      # Persistent storage for Freebox API token
+    # Persistent storage for Freebox API token
     volumes:
       - freebox_data:/app/data
 
@@ -43,11 +45,12 @@ services:
 
     # Health check
     healthcheck:
-      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health" ]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
+
     # Resource limits (optional)
     # deploy:
     #   resources:
@@ -58,7 +61,7 @@ services:
     #       cpus: '0.1'
     #       memory: 128M
 
-    # Named volume for persistent token storage
+# Named volume for persistent token storage
 volumes:
   freebox_data:
     name: freebox_dashboard_data
