@@ -3,15 +3,15 @@
 # ===========================================
 #
 # Usage:
-#   docker-compose up -d
+#   docker-compose -f docker-compose.local.yml up -d
 #
 # Environment variables (optional):
 #   DASHBOARD_PORT - Dashboard port (default: 7505)
 #   FREEBOX_HOST - Freebox hostname (default: mafreebox.freebox.fr)
 #
 # Examples:
-#   DASHBOARD_PORT=8080 docker-compose up -d
-#   docker-compose --env-file .env up -d
+#   DASHBOARD_PORT=8080 docker-compose -f docker-compose.local.yml up -d
+#   docker-compose -f docker-compose.local.yml --env-file .env up -d
 
 services:
   freebox-dashboard:
