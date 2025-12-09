@@ -7,6 +7,9 @@ import { freeboxApi } from '../services/freeboxApi.js';
 const execAsync = promisify(exec);
 const router = Router();
 
+const isWindows = process.platform === 'win32';
+const PING_FLAG = isWindows ? '-n' : '-c';
+
 interface PingResult {
   target: string;
   latency: number;
@@ -31,27 +34,39 @@ function parsePingOutput(output: string): { avg: number; mdev: number; loss: num
     const lossMatch = output.match(/(\d+(?:\.\d+)?)% packet loss/);
     const loss = lossMatch ? parseFloat(lossMatch[1]) : 0;
 
-    // Parse latency stats (e.g., "rtt min/avg/max/mdev = 5.123/10.456/15.789/2.345 ms")
-    const rttMatch = output.match(/rtt min\/avg\/max\/mdev = ([\d.]+)\/([\d.]+)\/([\d.]+)\/([\d.]+)/);
-    if (rttMatch) {
-      return {
-        avg: parseFloat(rttMatch[2]),
-        mdev: parseFloat(rttMatch[4]),
-        loss
-      };
+    if (!isWindows) {
+      const lossMatch = output.match(/(\d+(?:\.\d+)?)% packet loss/);
+      loss = lossMatch ? parseFloat(lossMatch[1]) : 0;
+
+      const rttMatch = output.match(/rtt min\/avg\/max\/mdev = ([\d.]+)\/([\d.]+)\/([\d.]+)\/([\d.]+)/);
+      const macMatch = output.match(/round-trip min\/avg\/max\/stddev = ([\d.]+)\/([\d.]+)\/([\d.]+)\/([\d.]+)/);
+
+      const match = rttMatch || macMatch;
+      if (match) {
+        avg = parseFloat(match[2]);
+        mdev = parseFloat(match[4]);
+      } else {
+        loss = loss === 0 && !output.includes('time=') ? 100 : loss;
+      }
+    } 
+    
+    // --- WINDOWS CASE ---
+    else {
+      const lossMatchWin = output.match(/\((\d+)%\s*(?:perte|loss)\)/i);
+      loss = lossMatchWin ? parseFloat(lossMatchWin[1]) : 0;
+
+      const avgMatch = output.match(/(?:Moyenne|Average)\s*=\s*(\d+)ms/i);
+      
+      if (avgMatch) {
+        avg = parseFloat(avgMatch[1]);
+        mdev = 0; 
+      } else {
+         loss = 100;
+      }
     }
 
-    // macOS format: "round-trip min/avg/max/stddev = 5.123/10.456/15.789/2.345 ms"
-    const macMatch = output.match(/round-trip min\/avg\/max\/stddev = ([\d.]+)\/([\d.]+)\/([\d.]+)\/([\d.]+)/);
-    if (macMatch) {
-      return {
-        avg: parseFloat(macMatch[2]),
-        mdev: parseFloat(macMatch[4]),
-        loss
-      };
-    }
+    return { avg, mdev, loss };
 
-    return { avg: 0, mdev: 0, loss: 100 };
   } catch {
     return { avg: 0, mdev: 0, loss: 100 };
   }
@@ -64,7 +79,7 @@ router.get('/ping', asyncHandler(async (req, res) => {
 
   try {
     // Run ping command
-    const { stdout } = await execAsync(`ping -c ${count} ${target}`, {
+    const { stdout } = await execAsync(`ping ${PING_FLAG} ${count} ${target}`, {
       timeout: 30000
     });
 
