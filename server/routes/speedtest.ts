@@ -29,10 +29,17 @@ interface ConnectionStatus {
 
 // Parse ping output to extract latency stats
 function parsePingOutput(output: string): { avg: number; mdev: number; loss: number } {
+  let avg = 0;
+  let mdev = 0;
+  let loss = 0;
+
   try {
-    // Parse packet loss (e.g., "0% packet loss")
+    
     const lossMatch = output.match(/(\d+(?:\.\d+)?)% packet loss/);
-    const loss = lossMatch ? parseFloat(lossMatch[1]) : 0;
+    
+    if (lossMatch) {
+      loss = parseFloat(lossMatch[1]);
+    }
 
     if (!isWindows) {
       const lossMatch = output.match(/(\d+(?:\.\d+)?)% packet loss/);
