@@ -6,19 +6,18 @@ import { config } from '../config.js';
 
 export interface RebootSchedule {
   enabled: boolean;
-  days: number[]; // 0-6 (Sun-Sat)
-  time: string; // "HH:MM"
+  // Key: day index (0-6), Value: time "HH:MM"
+  mapping: Record<number, string>;
 }
 
 const DEFAULT_SCHEDULE: RebootSchedule = {
   enabled: false,
-  days: [],
-  time: '03:00'
+  mapping: {}
 };
 
 class RebootSchedulerService {
   private schedule: RebootSchedule;
-  private task: cron.ScheduledTask | null = null;
+  private tasks: cron.ScheduledTask[] = [];
   private configPath: string;
 
   constructor() {
@@ -35,7 +34,22 @@ class RebootSchedulerService {
     if (fs.existsSync(this.configPath)) {
       try {
         const data = fs.readFileSync(this.configPath, 'utf-8');
-        return { ...DEFAULT_SCHEDULE, ...JSON.parse(data) };
+        const parsed = JSON.parse(data);
+        
+        // Migration logic for old format if necessary
+        let mapping = parsed.mapping || parsed.advancedMapping || {};
+        
+        // If coming from very old format with days/time but no mapping
+        if (Object.keys(mapping).length === 0 && Array.isArray(parsed.days) && parsed.time) {
+          parsed.days.forEach((day: number) => {
+            mapping[day] = parsed.time;
+          });
+        }
+
+        return { 
+          enabled: parsed.enabled || false,
+          mapping
+        };
       } catch (error) {
         console.error('[Scheduler] Failed to load schedule:', error);
       }
@@ -57,45 +71,47 @@ class RebootSchedulerService {
   }
 
   updateSchedule(newSchedule: Partial<RebootSchedule>): RebootSchedule {
-    this.schedule = { ...this.schedule, ...newSchedule };
+    // We only expect 'enabled' and 'mapping' in the new schedule
+    this.schedule = { 
+      ...this.schedule,
+      ...newSchedule 
+    };
+
     this.saveSchedule();
     this.updateCronJob();
     return this.schedule;
   }
 
   private updateCronJob() {
-    // Stop existing task
-    if (this.task) {
-      this.task.stop();
-      this.task = null;
-    }
+    // Stop and clear existing tasks
+    this.tasks.forEach(task => task.stop());
+    this.tasks = [];
 
-    if (!this.schedule.enabled || this.schedule.days.length === 0) {
+    if (!this.schedule.enabled) {
       console.log('[Scheduler] Reboot schedule disabled');
       return;
     }
 
-    // Parse time
-    const [hour, minute] = this.schedule.time.split(':');
-    
-    // Construct cron expression: "minute hour * * days"
-    const daysStr = this.schedule.days.join(',');
-    const cronExpression = `${minute} ${hour} * * ${daysStr}`;
+    // Always use mapping for scheduling
+    Object.entries(this.schedule.mapping).forEach(([dayStr, time]) => {
+      const day = parseInt(dayStr, 10);
+      if (isNaN(day) || !time) return;
 
-    console.log(`[Scheduler] Scheduling reboot with cron: "${cronExpression}"`);
+      const [hour, minute] = time.split(':');
+      const cronExpression = `${minute} ${hour} * * ${day}`;
 
-    // Validate cron expression
-    if (!cron.validate(cronExpression)) {
-      console.error('[Scheduler] Invalid cron expression generated');
-      return;
-    }
-
-    this.task = cron.schedule(cronExpression, async () => {
-      console.log('[Scheduler] Executing scheduled reboot...');
-      try {
-        await freeboxApi.reboot();
-      } catch (error) {
-        console.error('[Scheduler] Scheduled reboot failed:', error);
+      if (cron.validate(cronExpression)) {
+        console.log(`[Scheduler] Scheduling reboot for day ${day} at ${time} (${cronExpression})`);
+        this.tasks.push(cron.schedule(cronExpression, async () => {
+          console.log(`[Scheduler] Executing scheduled reboot (Day ${day})...`);
+          try {
+            await freeboxApi.reboot();
+          } catch (error) {
+            console.error('[Scheduler] Scheduled reboot failed:', error);
+          }
+        }));
+      } else {
+        console.error(`[Scheduler] Invalid cron expression for day ${day}: ${cronExpression}`);
       }
     });
   }

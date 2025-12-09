@@ -39,8 +39,7 @@ export interface RegistrationStatus {
 // System types
 export interface RebootSchedule {
   enabled: boolean;
-  days: number[]; // 0-6 (Sun-Sat)
-  time: string; // "HH:MM"
+  mapping: Record<number, string>; // Key: day (0-6), Value: "HH:MM"
 }
 
 export interface SystemInfo {
