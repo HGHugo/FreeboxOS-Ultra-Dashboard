@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { freeboxApi } from '../services/freeboxApi.js';
 import { modelDetection } from '../services/modelDetection.js';
 import { connectionWebSocket } from '../services/connectionWebSocket.js';
+import { freeboxNativeWebSocket } from '../services/freeboxNativeWebSocket.js';
 import { asyncHandler, createError } from '../middleware/errorHandler.js';
 
 const router = Router();
@@ -43,8 +44,9 @@ router.post('/login', asyncHandler(async (_req, res) => {
   // Detect model capabilities after successful login
   const capabilities = await modelDetection.detectModel();
 
-  // Notify WebSocket service to connect to Freebox
+  // Notify WebSocket services
   connectionWebSocket.onLogin();
+  freeboxNativeWebSocket.onLogin(); // Start native Freebox WebSocket (API v8+)
 
   res.json({
     success: true,
@@ -61,8 +63,9 @@ router.post('/logout', asyncHandler(async (_req, res) => {
   await freeboxApi.logout();
   // Clear cached capabilities on logout
   modelDetection.clearCache();
-  // Notify WebSocket service to disconnect from Freebox
+  // Notify WebSocket services
   connectionWebSocket.onLogout();
+  freeboxNativeWebSocket.onLogout();
   res.json({
     success: true,
     result: { message: 'Logged out' }
@@ -130,8 +133,9 @@ router.post('/reset', asyncHandler(async (_req, res) => {
   // Clear cached capabilities
   modelDetection.clearCache();
 
-  // Notify WebSocket service
+  // Notify WebSocket services
   connectionWebSocket.onLogout();
+  freeboxNativeWebSocket.onLogout();
 
   res.json({
     success: true,

@@ -200,6 +200,26 @@ class ConnectionWebSocketService {
   }
 
   /**
+   * Broadcast Freebox native WebSocket event to all dashboard clients
+   * Used by freeboxNativeWebSocket service to relay events
+   */
+  broadcastFreeboxEvent(eventType: string, data: Record<string, unknown>) {
+    if (!this.wss) return;
+
+    const message = JSON.stringify({
+      type: 'freebox_event',
+      eventType,
+      data
+    });
+
+    this.wss.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(message);
+      }
+    });
+  }
+
+  /**
    * Close WebSocket server and stop polling
    */
   close() {

@@ -15,21 +15,48 @@ interface SystemStatusData {
   uptime_val?: number;
 }
 
+// Freebox native event data types
+interface LanHostEventData {
+  id: string;
+  name: string;
+  host_type?: string;
+  vendor_name?: string;
+  active: boolean;
+  timestamp: number;
+}
+
+interface VmEventData {
+  id: number;
+  status?: string;
+  done?: boolean;
+  error?: boolean;
+  timestamp: number;
+}
+
+interface FreeboxEventMessage {
+  type: 'freebox_event';
+  eventType: string;
+  data: LanHostEventData | VmEventData;
+}
+
 interface WebSocketMessage {
-  type: 'connection_status' | 'system_status';
-  data: ConnectionStatus | SystemStatusData;
+  type: 'connection_status' | 'system_status' | 'freebox_event';
+  eventType?: string;
+  data: ConnectionStatus | SystemStatusData | LanHostEventData | VmEventData;
 }
 
 interface UseConnectionWebSocketOptions {
   enabled?: boolean;
+  onFreeboxEvent?: (eventType: string, data: LanHostEventData | VmEventData) => void;
 }
 
 /**
  * Hook to manage WebSocket connection for real-time connection status updates
  * Replaces polling for /api/connection
+ * Also receives native Freebox WebSocket events (lan_host, vm_state, etc.)
  */
 export function useConnectionWebSocket(options: UseConnectionWebSocketOptions = {}) {
-  const { enabled = true } = options;
+  const { enabled = true, onFreeboxEvent } = options;
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -130,6 +157,12 @@ export function useConnectionWebSocket(options: UseConnectionWebSocketOptions = 
               temperatureHistory: [...state.temperatureHistory.slice(-59), newPoint]
             };
           });
+        } else if (message.type === 'freebox_event' && message.eventType && message.data) {
+          // Native Freebox WebSocket event (lan_host, vm_state, etc.)
+          console.log('[WS Client] Freebox event:', message.eventType, message.data);
+          if (onFreeboxEvent) {
+            onFreeboxEvent(message.eventType, message.data as LanHostEventData | VmEventData);
+          }
         }
       } catch (error) {
         console.error('[WS Client] Failed to parse message:', error);
@@ -153,7 +186,7 @@ export function useConnectionWebSocket(options: UseConnectionWebSocketOptions = 
     ws.onerror = (error) => {
       console.error('[WS Client] Error:', error);
     };
-  }, [enabled, fetchConnectionStatus]);
+  }, [enabled, fetchConnectionStatus, onFreeboxEvent]);
 
   const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {
@@ -183,3 +216,6 @@ export function useConnectionWebSocket(options: UseConnectionWebSocketOptions = 
 
   return { isConnected };
 }
+
+// Export types for use in components
+export type { LanHostEventData, VmEventData };

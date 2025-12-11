@@ -26,12 +26,21 @@ interface FreeboxApiResponse<T = unknown> {
     msg?: string;
 }
 
+interface VersionInfo {
+    api_version?: string;
+    box_model?: string;
+    box_model_name?: string;
+    device_name?: string;
+    uid?: string;
+}
+
 class FreeboxApiService {
     private baseUrl: string;
     private appToken: string | null = null;
     private sessionToken: string | null = null;
     private challenge: string | null = null;
     private permissions: Record<string, boolean> = {};
+    private versionInfo: VersionInfo | null = null;
 
     constructor() {
         this.baseUrl = config.freebox.url;
@@ -339,12 +348,19 @@ class FreeboxApiService {
             const response = await fetch(url, {signal: controller.signal});
             clearTimeout(timeout);
             const data = await response.json();
+            // Cache version info for later use
+            this.versionInfo = data as VersionInfo;
             // api_version endpoint returns data directly, not wrapped in {success, result}
             return {success: true, result: data};
         } catch (error) {
             console.error('[FreeboxAPI] Failed to get API version:', error);
             return {success: false, msg: 'Failed to get API version'};
         }
+    }
+
+    // Get cached version info (call getApiVersion first to populate)
+    getVersionInfo(): VersionInfo | null {
+        return this.versionInfo;
     }
 
     async getSystemInfo(): Promise<FreeboxApiResponse> {

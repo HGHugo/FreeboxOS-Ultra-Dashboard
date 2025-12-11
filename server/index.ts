@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import { config } from './config.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { connectionWebSocket } from './services/connectionWebSocket.js';
+import { freeboxNativeWebSocket } from './services/freeboxNativeWebSocket.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -96,7 +97,7 @@ server.on('upgrade', (request, socket, head) => {
   console.log('[HTTP] Upgrade request received:', request.url);
 });
 
-// Initialize WebSocket server
+// Initialize WebSocket server (our internal dashboard WS)
 connectionWebSocket.init(server);
 
 // Start server
