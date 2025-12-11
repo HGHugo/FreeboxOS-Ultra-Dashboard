@@ -349,7 +349,7 @@ class FreeboxApiService {
 
     async getSystemInfo(): Promise<FreeboxApiResponse> {
         const result = await this.request('GET', API_ENDPOINTS.SYSTEM);
-        console.log('[FreeboxAPI] System info result:', JSON.stringify(result, null, 2));
+        // console.log('[FreeboxAPI] System info result:', JSON.stringify(result, null, 2));
         return result;
     }
 
@@ -593,6 +593,30 @@ class FreeboxApiService {
         return this.request('GET', `${API_ENDPOINTS.DOWNLOADS}${id}/peers`);
     }
 
+    async getDownloadFiles(id: number): Promise<FreeboxApiResponse> {
+        return this.request('GET', `${API_ENDPOINTS.DOWNLOADS}${id}/files`);
+    }
+
+    async updateDownloadFile(taskId: number, fileId: string, priority: string): Promise<FreeboxApiResponse> {
+        return this.request('PUT', `${API_ENDPOINTS.DOWNLOADS}${taskId}/files/${fileId}`, { priority });
+    }
+
+    async getDownloadPieces(id: number): Promise<FreeboxApiResponse> {
+        return this.request('GET', `${API_ENDPOINTS.DOWNLOADS}${id}/pieces`);
+    }
+
+    async getDownloadBlacklist(id: number): Promise<FreeboxApiResponse> {
+        return this.request('GET', `${API_ENDPOINTS.DOWNLOADS}${id}/blacklist`);
+    }
+
+    async emptyDownloadBlacklist(id: number): Promise<FreeboxApiResponse> {
+        return this.request('DELETE', `${API_ENDPOINTS.DOWNLOADS}${id}/blacklist/empty`);
+    }
+
+    async getDownloadLog(id: number): Promise<FreeboxApiResponse> {
+        return this.request('GET', `${API_ENDPOINTS.DOWNLOADS}${id}/log`);
+    }
+
     async updateDownload(id: number, data: { status?: string; io_priority?: string }): Promise<FreeboxApiResponse> {
         return this.request('PUT', `${API_ENDPOINTS.DOWNLOADS}${id}`, data);
     }
@@ -606,6 +630,75 @@ class FreeboxApiService {
             download_url: downloadUrl,
             download_dir: downloadDir
         });
+    }
+
+    async addDownloadFromFile(fileBuffer: Buffer, filename: string, downloadDir?: string): Promise<FreeboxApiResponse> {
+        // The Freebox API requires multipart/form-data for file uploads
+        // We'll build the multipart body manually since form-data + fetch has issues
+        const boundary = '----FreeboxFormBoundary' + Math.random().toString(36).substring(2);
+
+        let body = '';
+
+        // Add the torrent file
+        body += `--${boundary}\r\n`;
+        body += `Content-Disposition: form-data; name="download_file"; filename="${filename}"\r\n`;
+        body += `Content-Type: application/x-bittorrent\r\n\r\n`;
+
+        // Convert body prefix to buffer, append file, then add suffix
+        const bodyPrefix = Buffer.from(body, 'utf-8');
+
+        let bodySuffix = '\r\n';
+
+        // Add optional download directory (must be base64 encoded path)
+        if (downloadDir) {
+            bodySuffix += `--${boundary}\r\n`;
+            bodySuffix += `Content-Disposition: form-data; name="download_dir"\r\n\r\n`;
+            bodySuffix += `${downloadDir}\r\n`;
+        }
+
+        bodySuffix += `--${boundary}--\r\n`;
+        const bodySuffixBuffer = Buffer.from(bodySuffix, 'utf-8');
+
+        // Combine all parts
+        const fullBody = Buffer.concat([bodyPrefix, fileBuffer, bodySuffixBuffer]);
+
+        const url = this.buildUrl(API_ENDPOINTS.DOWNLOADS_ADD);
+        const headers: Record<string, string> = {
+            'Content-Type': `multipart/form-data; boundary=${boundary}`,
+            'Content-Length': fullBody.length.toString()
+        };
+
+        if (this.sessionToken) {
+            headers['X-Fbx-App-Auth'] = this.sessionToken;
+        }
+
+        console.log('[FreeboxAPI] addDownloadFromFile URL:', url);
+        console.log('[FreeboxAPI] addDownloadFromFile headers:', headers);
+
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers,
+                body: fullBody
+            });
+
+            const rawText = await response.text();
+            console.log('[FreeboxAPI] addDownloadFromFile response status:', response.status);
+            console.log('[FreeboxAPI] addDownloadFromFile raw response:', rawText.substring(0, 500));
+
+            // Find the start of the JSON object
+            const jsonStart = rawText.indexOf('{');
+            if (jsonStart === -1) {
+                return { success: false, error_code: 'INVALID_RESPONSE', msg: `No JSON found in response: ${rawText.substring(0, 100)}` };
+            }
+
+            const jsonText = rawText.substring(jsonStart);
+            const data = JSON.parse(jsonText) as FreeboxApiResponse;
+            return data;
+        } catch (error) {
+            console.error('[FreeboxAPI] addDownloadFromFile error:', error);
+            return { success: false, error_code: 'FETCH_ERROR', msg: String(error) };
+        }
     }
 
     async getDownloadStats(): Promise<FreeboxApiResponse> {

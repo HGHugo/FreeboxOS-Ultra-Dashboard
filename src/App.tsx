@@ -73,6 +73,10 @@ const App: React.FC = () => {
   const [downloadFilter, setDownloadFilter] = useState<'all' | 'active' | 'done'>('all');
   const [downloadSort, setDownloadSort] = useState<'recent' | 'name' | 'progress'>('recent');
 
+  // Navigation state for FilesPage
+  const [filesPageInitialTab, setFilesPageInitialTab] = useState<'files' | 'downloads' | 'shares'>('files');
+  const [filesPageInitialDownloadId, setFilesPageInitialDownloadId] = useState<string | undefined>(undefined);
+
   // Filters for history
   const [historyFilter, setHistoryFilter] = useState<'all' | 'connection' | 'calls' | 'notifications'>('all');
   const [historyPeriod, setHistoryPeriod] = useState<'30d' | '7d' | '24h'>('30d');
@@ -247,7 +251,15 @@ const App: React.FC = () => {
   if (currentPage === 'files') {
     return (
       <div className="min-h-screen pb-20 bg-[#050505] text-gray-300 font-sans selection:bg-blue-500/30">
-        <FilesPage onBack={() => setCurrentPage('dashboard')} />
+        <FilesPage
+          onBack={() => {
+            setCurrentPage('dashboard');
+            setFilesPageInitialTab('files');
+            setFilesPageInitialDownloadId(undefined);
+          }}
+          initialTab={filesPageInitialTab}
+          initialDownloadId={filesPageInitialDownloadId}
+        />
         <Footer
           currentPage={currentPage}
           onPageChange={handlePageChange}
@@ -494,7 +506,12 @@ const App: React.FC = () => {
             </Card>
 
             <Card
-              title="Fichiers"
+              title="Téléchargements"
+              onTitleClick={() => {
+                setFilesPageInitialTab('downloads');
+                setFilesPageInitialDownloadId(undefined);
+                setCurrentPage('files');
+              }}
               actions={
                 <div className="flex gap-2">
                   <button
@@ -538,7 +555,14 @@ const App: React.FC = () => {
                   </p>
                 </div>
               ) : filteredDownloads.length > 0 ? (
-                <FilePanel tasks={filteredDownloads} />
+                <FilePanel
+                  tasks={filteredDownloads}
+                  onTaskClick={(task) => {
+                    setFilesPageInitialTab('downloads');
+                    setFilesPageInitialDownloadId(task.id);
+                    setCurrentPage('files');
+                  }}
+                />
               ) : downloads.length > 0 ? (
                 <div className="text-center py-8">
                   <Download size={32} className="mx-auto text-gray-600 mb-2" />

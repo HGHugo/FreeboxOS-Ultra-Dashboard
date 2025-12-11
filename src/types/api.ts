@@ -273,9 +273,13 @@ export interface DownloadStats {
 export interface DownloadTracker {
   announce: string;
   is_enabled: boolean;
-  status: string;
-  leechers: number;
-  seeders: number;
+  is_backup: boolean;
+  status: 'unannounced' | 'announcing' | 'announce_failed' | 'announced';
+  interval: number;
+  min_interval: number;
+  reannounce_in: number;
+  nseeders: number;
+  nleechers: number;
 }
 
 export interface DownloadPeer {
@@ -286,6 +290,33 @@ export interface DownloadPeer {
   tx_rate: number;
   rx_pct: number;
   tx_pct: number;
+  rx: number;
+  tx: number;
+  progress: number;
+  state: 'disconnected' | 'connecting' | 'handshaking' | 'ready';
+  origin: 'tracker' | 'incoming' | 'dht' | 'pex' | 'user';
+  protocol: 'tcp' | 'tcp_obfuscated' | 'udp';
+  country_code: string;
+}
+
+export interface DownloadFile {
+  id: string;
+  task_id: string;
+  filepath: string;
+  name: string;
+  mimetype: string;
+  size: number;
+  rx: number;
+  status: 'queued' | 'error' | 'done';
+  error: string;
+  priority: 'no_dl' | 'low' | 'normal' | 'high';
+}
+
+export interface DownloadBlacklistEntry {
+  host: string;
+  reason: 'not_blacklisted' | 'crypto_not_supported' | 'connect_fail' | 'hs_timeout' | 'hs_failed' | 'hs_crypt_failed' | 'hs_crypto_disabled' | 'torrent_not_found' | 'read_failed' | 'write_failed' | 'crap_received' | 'conn_closed' | 'timeout' | 'blocklist' | 'user';
+  expire: number;
+  global: boolean;
 }
 
 // VM types
