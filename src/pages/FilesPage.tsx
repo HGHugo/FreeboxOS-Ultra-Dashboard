@@ -33,13 +33,18 @@ import {
   Share2,
   Link,
   Check,
-  Clock
+  Clock,
+  Plus,
+  Upload,
+  RotateCcw,
+  LinkIcon
 } from 'lucide-react';
 import { useFsStore, type FsFile, type ShareLink } from '../stores/fsStore';
 import { useDownloadsStore, useSystemStore } from '../stores';
 import { useAuthStore } from '../stores/authStore';
 import { PermissionBanner } from '../components/ui/PermissionBanner';
 import { ToastContainer, type ToastData } from '../components/ui/Toast';
+import { DownloadDetails } from '../components/downloads/DownloadDetails';
 import type { DownloadTask } from '../types';
 
 // Map model to display name
@@ -342,19 +347,64 @@ const FileItem: React.FC<{
 // Download item component
 const DownloadItem: React.FC<{
   task: DownloadTask;
+  isSelected: boolean;
+  onSelect: () => void;
   onPause: () => void;
   onResume: () => void;
+  onRetry: () => void;
   onDelete: () => void;
-}> = ({ task, onPause, onResume, onDelete }) => {
+}> = ({ task, isSelected, onSelect, onPause, onResume, onRetry, onDelete }) => {
   const isActive = task.status === 'downloading' || task.status === 'seeding';
   const isPaused = task.status === 'paused';
   const isDone = task.status === 'done';
+  const isError = task.status === 'error';
+  const isQueued = task.status === 'queued';
+
+  const getStatusColor = () => {
+    if (isDone) return 'bg-emerald-500/20';
+    if (isError) return 'bg-red-500/20';
+    if (isPaused || isQueued) return 'bg-gray-500/20';
+    return 'bg-blue-500/20';
+  };
+
+  const getIconColor = () => {
+    if (isDone) return 'text-emerald-400';
+    if (isError) return 'text-red-400';
+    if (isPaused || isQueued) return 'text-gray-400';
+    return 'text-blue-400';
+  };
+
+  const getProgressColor = () => {
+    if (isDone) return 'bg-emerald-500';
+    if (isError) return 'bg-red-500';
+    return 'bg-blue-500';
+  };
+
+  const getStatusText = () => {
+    if (isError) return <span className="text-red-400">Erreur</span>;
+    if (isQueued) return <span className="text-gray-400">En attente</span>;
+    if (isPaused) return <span className="text-gray-400">En pause</span>;
+    if (isDone) return <span className="text-emerald-400">Terminé</span>;
+    if (task.status === 'seeding') return <span className="text-purple-400">Seeding</span>;
+    return null;
+  };
 
   return (
-    <div className="bg-[#1a1a1a] rounded-lg p-3">
+    <div
+      className={`rounded-lg p-3 cursor-pointer transition-all ${
+        isSelected
+          ? 'bg-blue-900/30 border border-blue-600'
+          : 'bg-[#1a1a1a] border border-transparent hover:border-gray-700'
+      }`}
+      onClick={onSelect}
+    >
       <div className="flex items-center gap-3">
-        <div className={`p-2 rounded-lg ${isDone ? 'bg-emerald-500/20' : 'bg-blue-500/20'}`}>
-          <Download size={16} className={isDone ? 'text-emerald-400' : 'text-blue-400'} />
+        <div className={`p-2 rounded-lg ${getStatusColor()}`}>
+          {isError ? (
+            <AlertCircle size={16} className={getIconColor()} />
+          ) : (
+            <Download size={16} className={getIconColor()} />
+          )}
         </div>
         <div className="flex-1 min-w-0">
           <h4 className="text-sm text-white truncate">{task.name}</h4>
@@ -366,34 +416,52 @@ const DownloadItem: React.FC<{
                 <span className="text-blue-400">{formatSize(task.downloadSpeed)}/s</span>
               </>
             )}
-            {task.eta && task.eta > 0 && (
+            {task.eta && task.eta > 0 && isActive && (
               <>
                 <span>-</span>
                 <span>{Math.floor(task.eta / 60)}min restantes</span>
               </>
             )}
+            {getStatusText() && (
+              <>
+                <span>-</span>
+                {getStatusText()}
+              </>
+            )}
           </div>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
           {isActive && (
             <button
               onClick={onPause}
               className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
+              title="Pause"
             >
               <Pause size={16} />
             </button>
           )}
-          {isPaused && (
+          {(isPaused || isQueued) && (
             <button
               onClick={onResume}
               className="p-2 text-gray-400 hover:text-emerald-400 hover:bg-emerald-900/20 rounded-lg transition-colors"
+              title="Reprendre"
             >
               <Play size={16} />
+            </button>
+          )}
+          {isError && (
+            <button
+              onClick={onRetry}
+              className="p-2 text-gray-400 hover:text-amber-400 hover:bg-amber-900/20 rounded-lg transition-colors"
+              title="Réessayer"
+            >
+              <RotateCcw size={16} />
             </button>
           )}
           <button
             onClick={onDelete}
             className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition-colors"
+            title="Supprimer"
           >
             <X size={16} />
           </button>
@@ -403,7 +471,7 @@ const DownloadItem: React.FC<{
         <div className="mt-2">
           <div className="h-1.5 bg-gray-700 rounded-full overflow-hidden">
             <div
-              className={`h-full transition-all ${isDone ? 'bg-emerald-500' : 'bg-blue-500'}`}
+              className={`h-full transition-all ${getProgressColor()}`}
               style={{ width: `${task.progress}%` }}
             />
           </div>
@@ -446,6 +514,8 @@ export const FilesPage: React.FC<FilesPageProps> = ({ onBack }) => {
   const {
     tasks: downloads,
     fetchDownloads,
+    addDownload,
+    addDownloadFromFile,
     pauseDownload,
     resumeDownload,
     deleteDownload
@@ -458,7 +528,7 @@ export const FilesPage: React.FC<FilesPageProps> = ({ onBack }) => {
 
   // Get box name from system store
   const { info: systemInfo } = useSystemStore();
-  const boxName = getDisplayName(systemInfo?.model_info?.name || systemInfo?.board_name || '');
+  const boxName = getDisplayName(systemInfo?.board_name || '');
 
   const [activeTab, setActiveTab] = useState<'files' | 'downloads' | 'shares'>('files');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
@@ -486,6 +556,15 @@ export const FilesPage: React.FC<FilesPageProps> = ({ onBack }) => {
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; file: FsFile } | null>(null);
+
+  // Add download modal state
+  const [showAddDownloadModal, setShowAddDownloadModal] = useState(false);
+  const [downloadUrl, setDownloadUrl] = useState('');
+  const [torrentFile, setTorrentFile] = useState<File | null>(null);
+  const [isAddingDownload, setIsAddingDownload] = useState(false);
+
+  // Selected download for details view
+  const [selectedDownload, setSelectedDownload] = useState<DownloadTask | null>(null);
 
   // Toast notifications
   const [toasts, setToasts] = useState<ToastData[]>([]);
@@ -646,6 +725,65 @@ export const FilesPage: React.FC<FilesPageProps> = ({ onBack }) => {
       setNewFolderName('');
       setShowNewFolderModal(false);
     }
+  };
+
+  // Handle add download
+  const handleAddDownload = async () => {
+    setIsAddingDownload(true);
+    const toastId = addToast('loading', 'Ajout du téléchargement...');
+    let success = false;
+
+    try {
+      if (torrentFile) {
+        // Upload torrent file
+        const reader = new FileReader();
+        const fileBase64 = await new Promise<string>((resolve, reject) => {
+          reader.onload = () => {
+            const result = reader.result as string;
+            // Remove data:application/x-bittorrent;base64, prefix
+            const base64 = result.split(',')[1];
+            resolve(base64);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(torrentFile);
+        });
+        success = await addDownloadFromFile(fileBase64, torrentFile.name);
+      } else if (downloadUrl.trim()) {
+        // Add by URL
+        success = await addDownload(downloadUrl.trim());
+      }
+    } catch {
+      success = false;
+    }
+
+    removeToast(toastId);
+    setIsAddingDownload(false);
+
+    if (success) {
+      addToast('success', 'Téléchargement ajouté');
+      setDownloadUrl('');
+      setTorrentFile(null);
+      setShowAddDownloadModal(false);
+    } else {
+      addToast('error', 'Erreur lors de l\'ajout du téléchargement');
+    }
+  };
+
+  // Handle torrent file selection
+  const handleTorrentFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && file.name.endsWith('.torrent')) {
+      setTorrentFile(file);
+      setDownloadUrl(''); // Clear URL when file is selected
+    }
+  };
+
+  // Handle retry download (restart a failed download)
+  const handleRetryDownload = async (id: string) => {
+    const toastId = addToast('loading', 'Relance du téléchargement...');
+    await resumeDownload(id);
+    removeToast(toastId);
+    addToast('success', 'Téléchargement relancé');
   };
 
   // Handle delete selected
@@ -1189,9 +1327,16 @@ export const FilesPage: React.FC<FilesPageProps> = ({ onBack }) => {
             )}
 
             <div className="flex items-center justify-between mb-4">
-              <div className="text-sm text-gray-400">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setShowAddDownloadModal(true)}
+                  className="flex items-center gap-2 px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
+                >
+                  <Plus size={14} />
+                  Ajouter
+                </button>
                 {activeDownloads > 0 && (
-                  <span className="text-emerald-400">{activeDownloads} téléchargement(s) en cours</span>
+                  <span className="text-sm text-emerald-400">{activeDownloads} téléchargement(s) en cours</span>
                 )}
               </div>
               <button
@@ -1209,11 +1354,17 @@ export const FilesPage: React.FC<FilesPageProps> = ({ onBack }) => {
                   <DownloadItem
                     key={task.id}
                     task={task}
+                    isSelected={selectedDownload?.id === task.id}
+                    onSelect={() => setSelectedDownload(selectedDownload?.id === task.id ? null : task)}
                     onPause={() => pauseDownload(task.id)}
                     onResume={() => resumeDownload(task.id)}
+                    onRetry={() => handleRetryDownload(task.id)}
                     onDelete={() => {
                       if (confirm('Supprimer ce téléchargement ?')) {
                         deleteDownload(task.id, false);
+                        if (selectedDownload?.id === task.id) {
+                          setSelectedDownload(null);
+                        }
                       }
                     }}
                   />
@@ -1226,6 +1377,23 @@ export const FilesPage: React.FC<FilesPageProps> = ({ onBack }) => {
                 <p className="text-gray-500 text-center max-w-md">
                   Vos téléchargements actifs et terminés apparaîtront ici.
                 </p>
+                <button
+                  onClick={() => setShowAddDownloadModal(true)}
+                  className="mt-4 flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
+                >
+                  <Plus size={16} />
+                  Ajouter un téléchargement
+                </button>
+              </div>
+            )}
+
+            {/* Download Details Panel */}
+            {selectedDownload && (
+              <div className="mt-6">
+                <DownloadDetails
+                  task={selectedDownload}
+                  onClose={() => setSelectedDownload(null)}
+                />
               </div>
             )}
           </>
@@ -1661,6 +1829,121 @@ export const FilesPage: React.FC<FilesPageProps> = ({ onBack }) => {
                   </div>
                 </>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Add Download Modal */}
+        {showAddDownloadModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="bg-[#121212] rounded-xl border border-gray-800 p-6 w-full max-w-lg">
+              <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                <Download size={20} className="text-blue-400" />
+                Ajouter un téléchargement
+              </h3>
+
+              <div className="space-y-4">
+                {/* URL Input */}
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">
+                    URL du fichier ou lien magnet
+                  </label>
+                  <div className="flex gap-2">
+                    <div className="flex-1 relative">
+                      <LinkIcon size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                      <input
+                        type="text"
+                        placeholder="https://... ou magnet:?xt=..."
+                        value={downloadUrl}
+                        onChange={(e) => {
+                          setDownloadUrl(e.target.value);
+                          if (e.target.value) setTorrentFile(null);
+                        }}
+                        onKeyDown={(e) => e.key === 'Enter' && (downloadUrl.trim() || torrentFile) && handleAddDownload()}
+                        disabled={!!torrentFile}
+                        className="w-full pl-10 pr-4 py-2 bg-[#1a1a1a] border border-gray-700 rounded-lg text-white placeholder:text-gray-500 focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Separator */}
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 h-px bg-gray-700" />
+                  <span className="text-xs text-gray-500">ou</span>
+                  <div className="flex-1 h-px bg-gray-700" />
+                </div>
+
+                {/* File Upload */}
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">
+                    Fichier torrent
+                  </label>
+                  {torrentFile ? (
+                    <div className="flex items-center gap-3 p-3 bg-[#1a1a1a] border border-gray-700 rounded-lg">
+                      <div className="p-2 bg-blue-500/20 rounded-lg">
+                        <FileArchive size={20} className="text-blue-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-white truncate">{torrentFile.name}</p>
+                        <p className="text-xs text-gray-500">{formatSize(torrentFile.size)}</p>
+                      </div>
+                      <button
+                        onClick={() => setTorrentFile(null)}
+                        className="p-1 text-gray-400 hover:text-red-400 transition-colors"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed border-gray-700 rounded-lg cursor-pointer hover:border-gray-600 hover:bg-[#1a1a1a]/50 transition-colors">
+                      <Upload size={24} className="text-gray-500" />
+                      <span className="text-sm text-gray-400">Cliquez ou déposez un fichier .torrent</span>
+                      <input
+                        type="file"
+                        accept=".torrent"
+                        onChange={handleTorrentFileSelect}
+                        className="hidden"
+                      />
+                    </label>
+                  )}
+                </div>
+
+                <p className="text-xs text-gray-500">
+                  Formats supportés : HTTP, HTTPS, FTP, Magnet, fichiers .torrent
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-2 mt-6">
+                <button
+                  onClick={() => {
+                    setDownloadUrl('');
+                    setTorrentFile(null);
+                    setShowAddDownloadModal(false);
+                  }}
+                  className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={handleAddDownload}
+                  disabled={(!downloadUrl.trim() && !torrentFile) || isAddingDownload}
+                  className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+                >
+                  {isAddingDownload ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      Ajout...
+                    </>
+                  ) : (
+                    <>
+                      <Download size={16} />
+                      Télécharger
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         )}
