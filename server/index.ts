@@ -77,14 +77,16 @@ app.get('/api/health', (_req, res) => {
 // Error handler
 app.use(errorHandler);
 
-// Serve static files from dist folder (production build)
-const distPath = path.join(__dirname, '..', 'dist');
-app.use(express.static(distPath));
+// Serve static files from dist folder (production build only)
+if (process.env.NODE_ENV === 'production') {
+  const distPath = path.join(__dirname, '..', 'dist');
+  app.use(express.static(distPath));
 
-// SPA fallback - serve index.html for all non-API routes
-app.get('/{*splat}', (_req, res) => {
-  res.sendFile(path.join(distPath, 'index.html'));
-});
+  // SPA fallback - serve index.html for all non-API routes
+  app.get('/{*splat}', (_req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+}
 
 // Create HTTP server (needed for WebSocket)
 const server = http.createServer(app);

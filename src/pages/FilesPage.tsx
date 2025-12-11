@@ -264,7 +264,6 @@ export const FilesPage: React.FC<FilesPageProps> = ({ onBack }) => {
   const {
     files,
     currentPath,
-    storage,
     disks,
     isLoading,
     error,
@@ -274,7 +273,6 @@ export const FilesPage: React.FC<FilesPageProps> = ({ onBack }) => {
     navigateUp,
     createDirectory,
     deleteFiles,
-    fetchStorage,
     fetchDisks,
     toggleSelectFile,
     clearSelection,
@@ -302,15 +300,25 @@ export const FilesPage: React.FC<FilesPageProps> = ({ onBack }) => {
 
   // Fetch data on mount
   useEffect(() => {
-    fetchStorage();
     fetchDisks();
     fetchDownloads();
     // Always try to list files on mount - the API will handle errors gracefully
     listFiles('/');
-  }, [fetchStorage, fetchDisks, fetchDownloads, listFiles]);
+  }, [fetchDisks, fetchDownloads, listFiles]);
 
   // Check if we have a disk available
-  const hasDisk = (storage && storage.total_bytes > 0) || disks.length > 0;
+  const hasDisk = disks.length > 0;
+
+  // Calculate total storage from disks partitions
+  const totalStorage = disks.reduce((acc, disk) => {
+    const partitionTotal = disk.partitions?.reduce((sum, p) => sum + (p.total_bytes || 0), 0) || 0;
+    return acc + partitionTotal;
+  }, 0);
+
+  const usedStorage = disks.reduce((acc, disk) => {
+    const partitionUsed = disk.partitions?.reduce((sum, p) => sum + (p.used_bytes || 0), 0) || 0;
+    return acc + partitionUsed;
+  }, 0);
 
   // Filter files by search
   const filteredFiles = files.filter(file =>
@@ -372,19 +380,19 @@ export const FilesPage: React.FC<FilesPageProps> = ({ onBack }) => {
             </div>
 
             {/* Storage info */}
-            {storage && storage.total_bytes > 0 ? (
+            {hasDisk && totalStorage > 0 ? (
               <div className="hidden md:flex items-center gap-3 bg-[#1a1a1a] px-4 py-2 rounded-lg">
                 <HardDrive size={16} className="text-gray-400" />
                 <div>
                   <div className="text-xs text-gray-500">Espace utilisé</div>
                   <div className="text-sm text-white">
-                    {formatSize(storage.used_bytes || 0)} / {formatSize(storage.total_bytes)}
+                    {formatSize(usedStorage)} / {formatSize(totalStorage)}
                   </div>
                 </div>
                 <div className="w-24 h-2 bg-gray-700 rounded-full overflow-hidden">
                   <div
                     className="h-full bg-blue-500"
-                    style={{ width: `${storage.total_bytes > 0 ? ((storage.used_bytes || 0) / storage.total_bytes) * 100 : 0}%` }}
+                    style={{ width: `${totalStorage > 0 ? (usedStorage / totalStorage) * 100 : 0}%` }}
                   />
                 </div>
               </div>
