@@ -137,6 +137,7 @@ export const API_ENDPOINTS = {
   // TV
   TV_CHANNELS: '/tv/channels/',
   TV_BOUQUETS: '/tv/bouquets/',
+  TV_EPG_BY_TIME: '/tv/epg/by_time/',
 
   // Parental Control
   PARENTAL_CONFIG: '/parental/config/',
