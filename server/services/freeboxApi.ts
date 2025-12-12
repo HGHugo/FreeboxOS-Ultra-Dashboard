@@ -865,6 +865,10 @@ class FreeboxApiService {
         return this.request('GET', API_ENDPOINTS.TV_BOUQUETS);
     }
 
+    async getEpgByTime(timestamp: number): Promise<FreeboxApiResponse> {
+        return this.request('GET', `${API_ENDPOINTS.TV_EPG_BY_TIME}${timestamp}`);
+    }
+
     async getPvrConfig(): Promise<FreeboxApiResponse> {
         return this.request('GET', API_ENDPOINTS.PVR_CONFIG);
     }

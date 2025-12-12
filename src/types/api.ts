@@ -341,10 +341,14 @@ export interface VirtualMachine {
 export interface TvChannel {
   uuid: string;
   name: string;
-  number: number;
+  short_name?: string;
+  number?: number;
   logo_url?: string;
   quality?: string;
   bouquet?: string;
+  available?: boolean;
+  has_service?: boolean;
+  has_abo?: boolean;
 }
 
 export interface TvBouquet {
@@ -404,9 +408,30 @@ export interface PvrProgrammed {
 }
 
 export interface PvrConfig {
-  enabled: boolean;
-  max_time_shift: number;
-  storage_path: string;
+  margin_before: number;
+  margin_after: number;
+}
+
+// EPG (Electronic Program Guide) types
+export interface EpgProgram {
+  id: string;
+  date: number; // epoch timestamp
+  duration: number; // in seconds
+  title: string;
+  desc?: string;
+  picture?: string;
+  picture_big?: string;
+  category?: number;
+  category_name?: string;
+  prev?: string;
+  next?: string;
+}
+
+// API returns: { "uuid-webtv-XXX": { "<timestamp>_<hash>": EpgProgram } }
+export interface EpgByTimeResponse {
+  [channelUuid: string]: {
+    [programKey: string]: EpgProgram;
+  };
 }
 
 // Call types

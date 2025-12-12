@@ -113,6 +113,7 @@ export const API_ROUTES = {
   TV_PVR_CONFIG: '/api/tv/pvr/config',
   PVR_PROGRAMMED: '/api/tv/pvr/programmed',
   PVR_FINISHED: '/api/tv/pvr/finished',
+  TV_EPG_BY_TIME: '/api/tv/epg/by_time',
 
   // Parental / Profiles
   PROFILES: '/api/parental/profiles',
