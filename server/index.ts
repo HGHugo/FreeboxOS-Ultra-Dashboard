@@ -75,19 +75,25 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Error handler
-app.use(errorHandler);
-
 // Serve static files from dist folder (production build only)
+// IMPORTANT: Must be BEFORE error handler for SPA fallback to work
 if (process.env.NODE_ENV === 'production') {
   const distPath = path.join(__dirname, '..', 'dist');
   app.use(express.static(distPath));
 
   // SPA fallback - serve index.html for all non-API routes
-  app.get('/{*splat}', (_req, res) => {
+  // Express 5 requires named wildcards, use middleware instead for compatibility
+  app.use((req, res, next) => {
+    // Skip API routes
+    if (req.path.startsWith('/api/') || req.path.startsWith('/ws/')) {
+      return next();
+    }
     res.sendFile(path.join(distPath, 'index.html'));
   });
 }
+
+// Error handler - must be AFTER static files and SPA fallback
+app.use(errorHandler);
 
 // Create HTTP server (needed for WebSocket)
 const server = http.createServer(app);

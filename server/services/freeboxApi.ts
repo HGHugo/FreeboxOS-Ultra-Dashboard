@@ -327,11 +327,6 @@ class FreeboxApiService {
         return this.sessionToken;
     }
 
-    // Get base URL (for WebSocket connection)
-    getBaseUrl(): string {
-        return this.baseUrl;
-    }
-
     // Get permissions
     getPermissions(): Record<string, boolean> {
         return this.permissions;
@@ -1148,6 +1143,10 @@ class FreeboxApiService {
 
     async getVmDistros(): Promise<FreeboxApiResponse> {
         return this.request('GET', API_ENDPOINTS.VM_DISTROS);
+    }
+
+    async getVmInfo(): Promise<FreeboxApiResponse> {
+        return this.request('GET', API_ENDPOINTS.VM_INFO);
     }
 
     // ==================== NOTIFICATIONS ====================

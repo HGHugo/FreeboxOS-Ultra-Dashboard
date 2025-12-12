@@ -114,6 +114,15 @@ class ModelDetectionService {
 
       // Build capabilities
       this.capabilities = buildCapabilities(model, modelName, boxFlavor);
+
+      // Check for actual internal storage via /storage/disk/ API
+      // This is more reliable than box_flavor for Delta/Ultra with installed disks
+      const hasRealStorage = await this.checkActualStorage();
+      if (hasRealStorage && !this.capabilities.hasInternalStorage) {
+        console.log('[ModelDetection] Detected internal/sata/nvme disk - overriding hasInternalStorage to true');
+        this.capabilities.hasInternalStorage = true;
+      }
+
       this.lastDetectionTime = Date.now();
 
       console.log(`[ModelDetection] Detected: ${modelName} -> ${model}`);
@@ -139,6 +148,41 @@ class ModelDetectionService {
     this.capabilities = defaults;
     this.lastDetectionTime = Date.now();
     return defaults;
+  }
+
+  /**
+   * Check for actual internal storage via /storage/disk/ API
+   * Returns true if internal, sata, or nvme disks are present
+   * This is more reliable than box_flavor for Delta/Ultra with installed disks
+   */
+  private async checkActualStorage(): Promise<boolean> {
+    try {
+      const disksResponse = await freeboxApi.getDisks();
+      if (!disksResponse.success || !disksResponse.result) {
+        return false;
+      }
+
+      const disks = disksResponse.result as Array<{ type?: string; state?: string }>;
+      if (!Array.isArray(disks)) {
+        return false;
+      }
+
+      // Check if any disk is internal, sata, or nvme (not just USB)
+      // Types from API: 'internal', 'usb', 'sata', 'nvme'
+      const internalTypes = ['internal', 'sata', 'nvme'];
+      const hasInternalDisk = disks.some(disk =>
+        disk.type && internalTypes.includes(disk.type) && disk.state !== 'disabled'
+      );
+
+      if (hasInternalDisk) {
+        console.log('[ModelDetection] Found internal/sata/nvme disk(s):', disks.filter(d => internalTypes.includes(d.type || '')).map(d => d.type));
+      }
+
+      return hasInternalDisk;
+    } catch (error) {
+      console.log('[ModelDetection] Could not check storage disks:', error);
+      return false;
+    }
   }
 
   /**

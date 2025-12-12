@@ -111,6 +111,8 @@ DASHBOARD_PORT=5777 SERVER_PORT=5776 docker compose -f docker-compose.dev.yml up
 
 Les modifications de fichiers sources sont automatiquement detectees et appliquees sans redemarrer le conteneur.
 
+> **Note:** En mode developpement local (sans Docker), Vite utilise le port 5173 par defaut.
+
 ### Lancement rapide
 
 ```bash
@@ -242,7 +244,7 @@ Au premier lancement, vous devrez autoriser l'application sur la Freebox :
 
 ### Machines Virtuelles (Ultra/Delta uniquement)
 - **Gestion des VMs** - Demarrage, arret, redemarrage
-- **Statistiques** - Utilisation CPU, memoire, disque
+- **Ressources** - vCPU, memoire et disque alloues
 - **Creation** - Assistant de creation de VMs
 
 ### Controle Parental
@@ -302,7 +304,7 @@ npm install
 npm run dev
 ```
 
-- Frontend : http://localhost:3000 (hot-reload)
+- Frontend : http://localhost:5173 (hot-reload)
 - Backend API : http://localhost:3001
 
 ### Build Production
@@ -359,7 +361,7 @@ freebox-os-ultra-dashboard/
 | **Frontend** | React 19, TypeScript 5.8, Vite 6, Recharts, Lucide Icons |
 | **State** | Zustand |
 | **Backend** | Express 5, Node.js 20, TypeScript |
-| **API** | Freebox OS API v2/v4 |
+| **API** | Freebox OS API v14/v15 |
 | **Style** | Tailwind CSS |
 | **Deploiement** | Docker, PM2 |
 

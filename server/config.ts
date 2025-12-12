@@ -33,10 +33,11 @@ export const config = {
     appVersion: process.env.FREEBOX_APP_VERSION || '1.0.0',
     deviceName: process.env.FREEBOX_DEVICE_NAME || 'Dashboard Web App',
 
-    // API version - v15 is the latest stable version
-    // Supported by: Ultra, Delta, Pop, Revolution, Mini 4K (all current models)
-    // Key changes in v15: File listing returns object with pagination instead of array
-    apiVersion: 'v15',
+    // API version - v14 is used as default for broader compatibility
+    // v14: Supported by all current models (Ultra, Delta, Pop, Revolution, Mini 4K)
+    // v15: Latest version with pagination support for file listing
+    // Can be overridden via FREEBOX_API_VERSION env var
+    apiVersion: process.env.FREEBOX_API_VERSION || 'v14',
 
     // Timeouts
     requestTimeout: 10000,
@@ -182,6 +183,7 @@ export const API_ENDPOINTS = {
 
   // VM (may not be available on all models)
   VM: '/vm/',
+  VM_INFO: '/vm/info/',
   VM_DISTROS: '/vm/distros/',
 
   // AirMedia

@@ -15,14 +15,27 @@ interface CreateVmParams {
   enable_cloudinit?: boolean;
 }
 
+// VmSystemInfo from Freebox API /vm/info/
+// This is the ONLY source of VM resource stats (no per-VM stats available)
+export interface VmSystemInfo {
+  total_memory: number;  // Total memory available for VMs (in MB)
+  used_memory: number;   // Memory currently used by VMs (in MB)
+  total_cpus: number;    // Total vCPUs available
+  used_cpus: number;     // vCPUs currently allocated
+  usb_used: boolean;     // USB passthrough in use
+  usb_ports: string[];   // Available USB ports
+}
+
 interface VmState {
   vms: VM[];
+  systemInfo: VmSystemInfo | null;
   isLoading: boolean;
   hasInitialized: boolean;
   error: string | null;
 
   // Actions
   fetchVms: () => Promise<void>;
+  fetchSystemInfo: () => Promise<void>;
   startVm: (id: string) => Promise<void>;
   stopVm: (id: string) => Promise<void>;
   restartVm: (id: string) => Promise<void>;
@@ -32,6 +45,7 @@ interface VmState {
 
 export const useVmStore = create<VmState>((set, get) => ({
   vms: [],
+  systemInfo: null,
   isLoading: false,
   hasInitialized: false,
   error: null,
@@ -47,17 +61,20 @@ export const useVmStore = create<VmState>((set, get) => ({
       const response = await api.get<VirtualMachine[]>(API_ROUTES.VM);
 
       if (response.success && response.result) {
+        // Note: Freebox API provides allocated resources per VM (vcpus, memory)
+        // but NOT real-time usage stats (cpu_usage, memory_usage, disk_usage)
+        // Global usage stats come from /vm/info/ endpoint (VmSystemInfo)
         const vms: VM[] = response.result.map((vm) => ({
           id: vm.id.toString(),
           name: vm.name,
           os: vm.os?.toUpperCase() || 'UNKNOWN',
           status: vm.status as VM['status'], // running, stopped, starting, stopping
           vcpus: vm.vcpus || 1,
-          cpuUsage: vm.cpu_usage || 0,
-          ramUsage: vm.memory_usage ? vm.memory_usage / (1024 * 1024 * 1024) : 0, // Convert to GB
-          ramTotal: vm.memory ? vm.memory / (1024 * 1024 * 1024) : 0, // Convert to GB
-          diskUsage: vm.disk_usage ? vm.disk_usage / (1024 * 1024 * 1024) : 0, // Convert to GB
-          diskTotal: vm.disk_size ? vm.disk_size / (1024 * 1024 * 1024) : 0 // Convert to GB
+          cpuUsage: 0, // Real-time usage not available - use systemInfo for global stats
+          ramUsage: 0, // Real-time usage not available - use systemInfo for global stats
+          ramTotal: vm.memory ? vm.memory / 1024 : 0, // memory is in MB, convert to GB
+          diskUsage: 0, // Real-time usage not available
+          diskTotal: vm.disk_size ? vm.disk_size / (1024 * 1024 * 1024) : 0 // disk_size is in bytes, convert to GB
         }));
 
         set({ vms, isLoading: false, hasInitialized: true });
@@ -66,6 +83,18 @@ export const useVmStore = create<VmState>((set, get) => ({
       }
     } catch {
       set({ isLoading: false, hasInitialized: true, error: 'Failed to fetch VMs' });
+    }
+  },
+
+  fetchSystemInfo: async () => {
+    try {
+      const response = await api.get<VmSystemInfo>(`${API_ROUTES.VM}/info`);
+      if (response.success && response.result) {
+        set({ systemInfo: response.result });
+      }
+    } catch {
+      // Silent fail - system info is optional
+      console.log('[VM] Failed to fetch system info');
     }
   },
 

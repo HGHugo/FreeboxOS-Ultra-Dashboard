@@ -9,7 +9,7 @@
 #   docker compose -f docker-compose.dev.yml up --build
 #
 # Environment variables:
-#   DASHBOARD_PORT - Vite dev server port (default: 5173)
+#   DASHBOARD_PORT - Vite dev server port (default: 3000)
 #   FREEBOX_HOST   - Freebox server hostname (default: mafreebox.freebox.fr)
 
 services:

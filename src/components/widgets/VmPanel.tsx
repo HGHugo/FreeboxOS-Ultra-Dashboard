@@ -1,8 +1,7 @@
 import React from 'react';
-import { Monitor, Terminal } from 'lucide-react';
+import { Monitor, Terminal, Cpu, MemoryStick, HardDrive } from 'lucide-react';
 import { Toggle } from '../ui/Toggle';
 import { Badge } from '../ui/Badge';
-import { ResourceBar } from './ResourceBar';
 import type { VM } from '../../types';
 
 interface VmPanelProps {
@@ -43,24 +42,22 @@ export const VmPanel: React.FC<VmPanelProps> = ({ vms, onToggle, onConsole }) =>
           </button>
         </div>
 
-        <div className="grid grid-cols-3 gap-2 sm:gap-3">
-          <ResourceBar
-            label="CPU"
-            percent={vm.cpuUsage || 0}
-            color="bg-emerald-500"
-          />
-          <ResourceBar
-            label="RAM"
-            percent={vm.ramTotal > 0 ? (vm.ramUsage / vm.ramTotal) * 100 : 0}
-            text={vm.ramTotal > 0 ? `${vm.ramUsage.toFixed(1)}/${vm.ramTotal.toFixed(0)}G` : '--'}
-            color="bg-emerald-500"
-          />
-          <ResourceBar
-            label="Disque"
-            percent={vm.diskTotal > 0 ? (vm.diskUsage / vm.diskTotal) * 100 : 0}
-            text={vm.diskTotal > 0 ? `${vm.diskUsage.toFixed(1)}/${vm.diskTotal}T` : '--'}
-            color="bg-cyan-500"
-          />
+        {/* Resources allocated - Note: Per-VM usage stats NOT available in Freebox API */}
+        <div className="flex items-center gap-4 text-xs">
+          <div className="flex items-center gap-1.5">
+            <Cpu size={14} className="text-blue-400" />
+            <span className="text-gray-400">{vm.vcpus} vCPU</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <MemoryStick size={14} className="text-emerald-400" />
+            <span className="text-gray-400">{Math.round(vm.ramTotal * 10) / 10} Go</span>
+          </div>
+          {vm.diskTotal > 0 && (
+            <div className="flex items-center gap-1.5">
+              <HardDrive size={14} className="text-cyan-400" />
+              <span className="text-gray-400">{Math.round(vm.diskTotal)} Go</span>
+            </div>
+          )}
         </div>
       </div>
     ))}

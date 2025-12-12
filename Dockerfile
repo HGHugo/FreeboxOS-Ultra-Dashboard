@@ -48,9 +48,9 @@ ENV PORT=3000
 ENV FREEBOX_TOKEN_FILE=/app/data/freebox_token.json
 ENV FREEBOX_HOST=mafreebox.freebox.fr
 
-# Health check
+# Health check (use 127.0.0.1 instead of localhost to avoid IPv6 issues in Alpine)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT}/api/health || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:${PORT}/api/health || exit 1
 
 # Switch to non-root user
 USER freebox

@@ -22,7 +22,8 @@ import {
   Plus,
   Trash2,
   Edit2,
-  Calendar
+  Calendar,
+  Lightbulb
 } from 'lucide-react';
 import { api } from '../api/client';
 import { API_ROUTES } from '../utils/constants';
@@ -187,11 +188,18 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
     port_ctrl: number;
   } | null>(null);
 
-  // LCD settings
+  // LCD settings (includes LED strip for Ultra 25 ans edition)
   const [lcdConfig, setLcdConfig] = useState<{
     brightness: number;
     orientation: number;
     orientation_forced: boolean;
+    hide_wifi_key?: boolean;
+    hide_status_led?: boolean;
+    // LED Strip (Ultra 25 ans edition only)
+    led_strip_enabled?: boolean;
+    led_strip_brightness?: number;
+    led_strip_animation?: string;
+    available_led_strip_animations?: string[];
   } | null>(null);
 
   // WiFi planning
@@ -1102,6 +1110,51 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
                 />
               </SettingRow>
             </Section>
+
+            {/* LED Strip section - Only shown for Ultra 25 ans edition */}
+            {lcdConfig.led_strip_enabled !== undefined && (
+              <Section title="Bandeau LED" icon={Lightbulb} permissionError={!hasPermission('settings') ? getPermissionErrorMessage('settings') : null} freeboxSettingsUrl={!hasPermission('settings') ? getFreeboxSettingsUrl(freeboxUrl) : null}>
+                <SettingRow
+                  label="Bandeau LED activé"
+                  description="Active ou désactive le bandeau LED"
+                >
+                  <Toggle
+                    enabled={lcdConfig.led_strip_enabled ?? false}
+                    onChange={(v) => setLcdConfig({ ...lcdConfig, led_strip_enabled: v })}
+                  />
+                </SettingRow>
+                {lcdConfig.led_strip_enabled && (
+                  <>
+                    <SettingRow label="Luminosité LED">
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={lcdConfig.led_strip_brightness ?? 50}
+                          onChange={(e) => setLcdConfig({ ...lcdConfig, led_strip_brightness: parseInt(e.target.value) })}
+                          className="w-32"
+                        />
+                        <span className="text-sm text-gray-400 w-12">{lcdConfig.led_strip_brightness ?? 50}%</span>
+                      </div>
+                    </SettingRow>
+                    <SettingRow label="Animation">
+                      <select
+                        value={lcdConfig.led_strip_animation ?? 'breathing'}
+                        onChange={(e) => setLcdConfig({ ...lcdConfig, led_strip_animation: e.target.value })}
+                        className="px-3 py-1.5 bg-[#1a1a1a] border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500"
+                      >
+                        {(lcdConfig.available_led_strip_animations || ['organic', 'static', 'breathing', 'rain', 'trail', 'wave']).map((anim) => (
+                          <option key={anim} value={anim}>
+                            {anim.charAt(0).toUpperCase() + anim.slice(1)}
+                          </option>
+                        ))}
+                      </select>
+                    </SettingRow>
+                  </>
+                )}
+              </Section>
+            )}
 
             <Section title="Actions système" icon={Power} permissionError={!hasPermission('settings') ? getPermissionErrorMessage('settings') : null} freeboxSettingsUrl={!hasPermission('settings') ? getFreeboxSettingsUrl(freeboxUrl) : null}>
               <div className="py-4 space-y-3">
