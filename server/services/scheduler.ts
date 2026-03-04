@@ -102,12 +102,23 @@ class RebootSchedulerService {
 
       if (cron.validate(cronExpression)) {
         console.log(`[Scheduler] Scheduling reboot for day ${day} at ${time} (${cronExpression})`);
-        this.tasks.push(cron.schedule(cronExpression, async () => {
+        const task = cron.schedule(cronExpression, async () => {
           console.log(`[Scheduler] Executing scheduled reboot (Day ${day})...`);
           try {
-            await freeboxApi.reboot();
+            // Check if API is authenticated before attempting reboot
+            if (!freeboxApi.isLoggedIn()) {
+              console.error('[Scheduler] Cannot reboot: Freebox API not authenticated. Please authenticate first.');
+              return;
+            }
+            
+            const result = await freeboxApi.reboot();
+            if (result.success) {
+              console.log('[Scheduler] Scheduled reboot command sent successfully');
+            } else {
+              console.error('[Scheduler] Scheduled reboot failed:', result.msg || result.error_code);
+            }
           } catch (error) {
-            console.error('[Scheduler] Scheduled reboot failed:', error);
+            console.error('[Scheduler] Scheduled reboot error:', error);
           }
         }));
       } else {
