@@ -120,7 +120,7 @@ class RebootSchedulerService {
           } catch (error) {
             console.error('[Scheduler] Scheduled reboot error:', error);
           }
-        }));
+        });
       } else {
         console.error(`[Scheduler] Invalid cron expression for day ${day}: ${cronExpression}`);
       }
