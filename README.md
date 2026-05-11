@@ -25,11 +25,13 @@
 
 ## Compatibilite
 
-| Modele | Support | VMs | WiFi 6E |
-|--------|---------|-----|---------|
-| **Freebox Ultra** | Complet | Oui | Oui |
-| **Freebox Delta** | Complet | Oui | Non |
-| **Freebox Pop** | Complet | Non | Non |
+| Modele | Support | VMs |
+|--------|---------|-----|
+| **Freebox Ultra** | Complet | Oui |
+| **Freebox Delta** | Complet | Oui |
+| **Freebox Pop** | Complet | Non |
+| **Freebox Mini 4K** | Test | Non |
+| **Freebox Revolution** | Test | Non |
 
 ## Apercu
 
@@ -55,6 +57,8 @@ Freebox OS Ultra Dashboard est une interface web alternative pour gerer votre Fr
 ![Screenshot 13](img-capture/13.png)
 ![Screenshot 14](img-capture/14.png)
 ![Screenshot 15](img-capture/15.png)
+![Visualisation Reseau](img-capture/16.png)
+![Visualisation Reseau - Logos](img-capture/17.png)
 </details>
 
 ## Installation Docker (Recommandee)
@@ -65,6 +69,52 @@ Docker est la methode recommandee pour deployer sur NAS (Synology, QNAP), Raspbe
 - Docker et Docker Compose installes
 - Acces au meme reseau local que la Freebox
 
+### Deux methodes de deploiement
+
+#### Production (Image pre-construite - Recommande)
+
+Utilise l'image officielle depuis GitHub Container Registry :
+
+```bash
+# Lancer le conteneur avec l'image pre-construite
+docker-compose up -d
+```
+
+**Avantages :**
+- Demarrage ultra-rapide (pas de compilation)
+- Image testee et validee
+- Mises a jour automatiques avec `docker-compose pull`
+
+#### Developpement local (Build depuis les sources)
+
+Pour tester des modifications ou contribuer :
+
+```bash
+# Build et lancement local
+docker-compose -f docker-compose.local.yml up -d --build
+```
+
+#### Mode developpement avec Hot Reload
+
+Pour developper avec recompilation automatique et rafraichissement du navigateur :
+
+```bash
+# Lancer le mode dev avec hot reload
+docker compose -f docker-compose.dev.yml up --build
+```
+
+# Exemple avec des ports alternatifs 
+```bash 
+DASHBOARD_PORT=5777 SERVER_PORT=5776 docker compose -f docker-compose.dev.yml up --build
+```
+
+- **Frontend** : http://localhost:3000 (Vite HMR - rafraichissement instantane)
+- **Backend API** : http://localhost:3001 (redemarrage auto avec tsx watch)
+
+Les modifications de fichiers sources sont automatiquement detectees et appliquees sans redemarrer le conteneur.
+
+> **Note:** En mode developpement local (sans Docker), Vite utilise le port 5173 par defaut.
+
 ### Lancement rapide
 
 ```bash
@@ -72,8 +122,11 @@ Docker est la methode recommandee pour deployer sur NAS (Synology, QNAP), Raspbe
 git clone https://github.com/HGHugo/FreeboxOS-Ultra-Dashboard.git
 cd FreeboxOS-Ultra-Dashboard
 
-# Lancer le conteneur
+# Lancer avec l'image pre-construite (PRODUCTION)
 docker-compose up -d
+
+# OU build local (DEVELOPPEMENT)
+docker-compose -f docker-compose.local.yml up -d --build
 ```
 
 Le dashboard sera accessible sur :
@@ -97,6 +150,18 @@ docker-compose up -d
 |----------|--------|-------------|
 | `DASHBOARD_PORT` | `7505` | Port d'acces au dashboard |
 | `FREEBOX_HOST` | `mafreebox.freebox.fr` | Hostname de la Freebox |
+| `VITE_LOGO_DEV_TOKEN` | _(vide)_ | Cle API [logo.dev](https://logo.dev) pour les logos des appareils (optionnel) |
+
+### Mise a jour Docker
+
+```bash
+# Production (image pre-construite)
+docker-compose pull
+docker-compose up -d
+
+# Developpement local (rebuild)
+docker-compose -f docker-compose.local.yml up -d --build
+```
 
 ### Persistance du token
 
@@ -128,6 +193,64 @@ L'image Docker est configuree avec les bonnes pratiques de securite :
 - Variables d'environnement configurables (pas de secrets hardcodes)
 
 Merci à [Loule95450](https://github.com/Loule95450) & [Rayandri](https://github.com/Rayandri) pour la pull-request.
+
+## Integration MCP — Piloter la Freebox via Claude AI (Optionnel)
+
+Le dashboard peut etre complete par un serveur [MCP (Model Context Protocol)](https://github.com/leto1210/mafreebox-mcpserver) qui permet de piloter votre Freebox en langage naturel depuis **Claude Desktop**.
+
+Exemples de commandes possibles :
+- *"Quels appareils sont connectes en ce moment ?"*
+- *"Montre-moi les telechargements en cours"*
+- *"Quelle est la temperature de ma Freebox ?"*
+- *"Ouvre le port 8080 vers mon serveur 192.168.1.10"*
+- *"Demarre la VM Ubuntu"*
+
+### Activation
+
+Le serveur MCP est un **profil Docker Compose optionnel** — les utilisateurs qui n'en veulent pas ne sont pas impactes.
+
+```bash
+# Production (image pre-construite)
+docker-compose --profile mcp up -d
+
+# Developpement local (build depuis les sources)
+docker-compose -f docker-compose.local.yml --profile mcp up -d --build
+```
+
+### Configuration Claude Desktop
+
+Editez le fichier de configuration Claude Desktop :
+- **macOS** : `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows** : `%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "freebox": {
+      "command": "docker",
+      "args": [
+        "run", "--rm", "-i",
+        "-v", "freebox_mcp_data:/app/data",
+        "-e", "FREEBOX_HOST=mafreebox.freebox.fr",
+        "ghcr.io/leto1210/mafreebox-mcpserver:latest"
+      ]
+    }
+  }
+}
+```
+
+> **`-i` et non `-it`** : Claude Desktop communique via stdio sans TTY.
+
+### Premiere connexion MCP
+
+1. Dans Claude Desktop, demandez : **"Connecte-toi a ma Freebox"**
+2. Claude appellera `freebox_authorize`
+3. **Sur votre Freebox** : un message s'affiche sur l'ecran LCD
+4. **Appuyez sur `>`** pour autoriser l'application
+5. Demandez a Claude : **"Verifie si l'autorisation est accordee"**
+6. Le token est sauvegarde — les prochaines sessions sont automatiques
+
+> Pour plus de details, consultez le [README du serveur MCP](https://github.com/leto1210/mafreebox-mcpserver).
 
 ## Premiere connexion
 
@@ -182,7 +305,7 @@ Au premier lancement, vous devrez autoriser l'application sur la Freebox :
 
 ### Machines Virtuelles (Ultra/Delta uniquement)
 - **Gestion des VMs** - Demarrage, arret, redemarrage
-- **Statistiques** - Utilisation CPU, memoire, disque
+- **Ressources** - vCPU, memoire et disque alloues
 - **Creation** - Assistant de creation de VMs
 
 ### Controle Parental
@@ -194,6 +317,35 @@ Au premier lancement, vous devrez autoriser l'application sur la Freebox :
 - **Historique bande passante** - Graphiques sur 1h, 24h, 7j
 - **Temperatures** - Evolution des temperatures du systeme
 - **Statistiques reseau** - Donnees detaillees de connexion
+
+### Visualisation Reseau
+- **Topologie interactive** - Carte du reseau avec la Freebox au centre, l'ISP et tous les appareils connectes
+- **Flux animes** - Flux de particules animees pour le WiFi, lignes solides pour l'Ethernet
+- **Pan & Zoom** - Navigation libre avec deplacement, zoom molette/boutons et reset
+- **Logos des appareils** - Affichage automatique des logos des marques (Apple, Samsung, Google, etc.) via [logo.dev](https://logo.dev) (optionnel, voir [configuration](#logos-des-appareils-logodev))
+- **Mode sans logo** - Fonctionne sans cle API avec des icones generiques (Lucide Icons)
+
+![Visualisation Reseau](img-capture/16.png)
+
+## Logos des appareils (logo.dev)
+
+La page **Visualisation Reseau** peut afficher les logos des marques (Apple, Samsung, Google, Raspberry Pi, etc.) a cote de chaque appareil connecte. Cette fonctionnalite utilise l'API [logo.dev](https://logo.dev) et est **entierement optionnelle**.
+
+### Avec logos (recommande)
+
+1. Creez un compte gratuit sur [logo.dev](https://logo.dev)
+2. Recuperez votre **cle API publique** depuis le tableau de bord logo.dev
+3. Ajoutez-la dans votre fichier `.env` :
+
+```bash
+VITE_LOGO_DEV_TOKEN=pk_votre_cle_ici
+```
+
+4. Redemarrez l'application
+
+### Sans logos
+
+Si aucune cle API n'est configuree (`VITE_LOGO_DEV_TOKEN` vide ou absent), la visualisation fonctionne normalement avec des **icones generiques** (Lucide Icons) a la place des logos de marques. Aucune erreur ne sera affichee.
 
 ## Installation alternative (Node.js)
 
@@ -299,7 +451,7 @@ freebox-os-ultra-dashboard/
 | **Frontend** | React 19, TypeScript 5.8, Vite 6, Recharts, Lucide Icons |
 | **State** | Zustand |
 | **Backend** | Express 5, Node.js 20, TypeScript |
-| **API** | Freebox OS API v2/v4 |
+| **API** | Freebox OS API v14/v15 |
 | **Style** | Tailwind CSS |
 | **Deploiement** | Docker, PM2 |
 

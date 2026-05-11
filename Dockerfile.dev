@@ -1,0 +1,21 @@
+# ===========================================
+# FreeboxOS Ultra Dashboard - Development Dockerfile
+# Hot reload enabled for frontend and backend
+# ===========================================
+
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install dependencies
+COPY package*.json ./
+RUN npm ci
+
+# Source code will be mounted via volume
+# No COPY of source code here
+
+# Vite dev server + API server ports
+EXPOSE 5173 3000
+
+# Start dev server with hot reload
+CMD ["npm", "run", "dev"]

@@ -9,6 +9,7 @@ npm-debug.log*
 
 # Build output (will be rebuilt in container)
 dist/
+dist-server/
 
 # Development files
 .git/

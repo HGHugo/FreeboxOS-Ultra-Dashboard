@@ -1,0 +1,3 @@
+[submodule "mcp-server"]
+	path = mcp-server
+	url = https://github.com/leto1210/mafreebox-mcpserver.git

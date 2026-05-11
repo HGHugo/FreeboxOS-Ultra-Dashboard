@@ -1,27 +1,67 @@
 import React, { useState } from 'react';
-import { Router, Wifi, Check, X, Loader2, AlertCircle } from 'lucide-react';
+import { Router, Wifi, Check, X, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 
 interface LoginModalProps {
   isOpen: boolean;
 }
 
+// Check if URL is a local IP address
+const isLocalIpUrl = (url: string): boolean => {
+  try {
+    const urlObj = new URL(url);
+    const hostname = urlObj.hostname;
+    // Check for common private IP patterns
+    return /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|localhost|127\.)/.test(hostname);
+  } catch {
+    return false;
+  }
+};
+
+// Extract IP from URL
+const extractIpFromUrl = (url: string): string => {
+  try {
+    const urlObj = new URL(url);
+    return urlObj.hostname;
+  } catch {
+    return '192.168.1.254';
+  }
+};
+
+// Detect if error is "app already authorized" or auth error type
+const isAuthTokenError = (error: string | null): boolean => {
+  if (!error) return false;
+  const lowerError = error.toLowerCase();
+  return lowerError.includes('already') ||
+         lowerError.includes('déjà autorisé') ||
+         lowerError.includes('already_authorized') ||
+         lowerError.includes('app_token') ||
+         lowerError.includes('invalid_token') ||
+         lowerError.includes('auth') ||
+         lowerError.includes('authentification');
+};
+
 export const LoginModal: React.FC<LoginModalProps> = ({ isOpen }) => {
   const {
     isRegistered,
     isRegistering,
+    isLoading,
     registrationStatus,
     error,
     freeboxUrl,
     register,
     login,
     setFreeboxUrl,
-    clearError
+    clearError,
+    resetToken
   } = useAuthStore();
 
-  const [urlInput, setUrlInput] = useState(freeboxUrl);
-  const [useLocalIp, setUseLocalIp] = useState(false);
-  const [localIp, setLocalIp] = useState('192.168.1.254');
+  // Determine initial state based on saved URL
+  const savedIsLocalIp = isLocalIpUrl(freeboxUrl);
+  const [urlInput, setUrlInput] = useState(savedIsLocalIp ? 'https://mafreebox.freebox.fr' : freeboxUrl);
+  const [useLocalIp, setUseLocalIp] = useState(savedIsLocalIp);
+  const [localIp, setLocalIp] = useState(savedIsLocalIp ? extractIpFromUrl(freeboxUrl) : '192.168.1.254');
+  const [isResetting, setIsResetting] = useState(false);
 
   if (!isOpen) return null;
 
@@ -34,6 +74,14 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen }) => {
     } else {
       await register();
     }
+  };
+
+  const handleReset = async () => {
+    setIsResetting(true);
+    await resetToken();
+    setIsResetting(false);
+    // Clear error and allow user to re-register
+    clearError();
   };
 
   const getStatusMessage = () => {
@@ -65,6 +113,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen }) => {
     }
   };
 
+  const showResetButton = isAuthTokenError(error);
+
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
       <div className="bg-[#121212] w-full max-w-md rounded-2xl border border-gray-800 shadow-2xl overflow-hidden">
@@ -84,14 +134,35 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen }) => {
 
         {/* Content */}
         <div className="p-6 space-y-4">
-          {/* Error message */}
+          {/* Error message with reset option */}
           {error && (
-            <div className="flex items-center gap-2 p-3 bg-red-900/20 border border-red-800 rounded-lg text-red-400 text-sm">
-              <AlertCircle size={16} />
-              {error}
-              <button onClick={clearError} className="ml-auto">
-                <X size={16} />
-              </button>
+            <div className="p-3 bg-red-900/20 border border-red-800 rounded-lg">
+              <div className="flex items-center gap-2 text-red-400 text-sm">
+                <AlertCircle size={16} />
+                <span className="flex-1">{error}</span>
+                <button onClick={clearError}>
+                  <X size={16} />
+                </button>
+              </div>
+              {showResetButton && (
+                <div className="mt-3 pt-3 border-t border-red-800/50">
+                  <p className="text-xs text-gray-400 mb-2">
+                    Le token d'authentification semble invalide ou l'application est déjà enregistrée sur la Freebox mais pas sur ce serveur.
+                  </p>
+                  <button
+                    onClick={handleReset}
+                    disabled={isResetting}
+                    className="flex items-center justify-center gap-2 w-full py-2 bg-orange-600 hover:bg-orange-700 text-white text-sm rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    {isResetting ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <RefreshCw size={14} />
+                    )}
+                    Réinitialiser et ré-enregistrer
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -162,14 +233,19 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen }) => {
           {/* Connect button */}
           <button
             onClick={handleConnect}
-            disabled={isRegistering && registrationStatus === 'pending'}
+            disabled={(isRegistering && registrationStatus === 'pending') || isLoading || isResetting}
             className={`w-full py-3 rounded-lg font-medium transition-colors ${
-              isRegistering && registrationStatus === 'pending'
+              (isRegistering && registrationStatus === 'pending') || isLoading || isResetting
                 ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
                 : 'bg-blue-600 hover:bg-blue-700 text-white'
             }`}
           >
-            {isRegistering && registrationStatus === 'pending' ? (
+            {isLoading ? (
+              <span className="flex items-center justify-center gap-2">
+                <Loader2 size={16} className="animate-spin" />
+                Connexion...
+              </span>
+            ) : isRegistering && registrationStatus === 'pending' ? (
               <span className="flex items-center justify-center gap-2">
                 <Loader2 size={16} className="animate-spin" />
                 En attente de validation...

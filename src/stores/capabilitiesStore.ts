@@ -8,7 +8,8 @@ import { api } from '../api/client';
 // Types matching backend
 export type FreeboxModel = 'ultra' | 'delta' | 'pop' | 'revolution' | 'unknown';
 export type VmSupport = 'full' | 'limited' | 'none';
-export type TemperatureType = 'quad_core' | 'legacy';
+// @deprecated All Freebox models now use 'legacy' temperature fields (temp_cpum, temp_sw, temp_cpub)
+export type TemperatureType = 'legacy';
 export type BoxFlavor = 'full' | 'light';
 
 export interface FreeboxCapabilities {

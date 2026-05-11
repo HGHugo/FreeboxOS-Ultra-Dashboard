@@ -101,11 +101,28 @@ class ModelDetectionService {
       const modelName = versionData.box_model_name || versionData.box_model || versionData.device_name || 'Unknown';
       const boxFlavor = (versionData.box_flavor === 'full' ? 'full' : 'light') as BoxFlavor;
 
+      console.log('[ModelDetection] API response:', {
+        box_model_name: versionData.box_model_name,
+        box_model: versionData.box_model,
+        box_flavor: versionData.box_flavor,
+        device_name: versionData.device_name
+      });
+      console.log(`[ModelDetection] Using model name: "${modelName}"`);
+
       // Detect model from name
       const model = detectModelFromName(modelName);
 
       // Build capabilities
       this.capabilities = buildCapabilities(model, modelName, boxFlavor);
+
+      // Check for actual internal storage via /storage/disk/ API
+      // This is more reliable than box_flavor for Delta/Ultra with installed disks
+      const hasRealStorage = await this.checkActualStorage();
+      if (hasRealStorage && !this.capabilities.hasInternalStorage) {
+        console.log('[ModelDetection] Detected internal/sata/nvme disk - overriding hasInternalStorage to true');
+        this.capabilities.hasInternalStorage = true;
+      }
+
       this.lastDetectionTime = Date.now();
 
       console.log(`[ModelDetection] Detected: ${modelName} -> ${model}`);
@@ -131,6 +148,41 @@ class ModelDetectionService {
     this.capabilities = defaults;
     this.lastDetectionTime = Date.now();
     return defaults;
+  }
+
+  /**
+   * Check for actual internal storage via /storage/disk/ API
+   * Returns true if internal, sata, or nvme disks are present
+   * This is more reliable than box_flavor for Delta/Ultra with installed disks
+   */
+  private async checkActualStorage(): Promise<boolean> {
+    try {
+      const disksResponse = await freeboxApi.getDisks();
+      if (!disksResponse.success || !disksResponse.result) {
+        return false;
+      }
+
+      const disks = disksResponse.result as Array<{ type?: string; state?: string }>;
+      if (!Array.isArray(disks)) {
+        return false;
+      }
+
+      // Check if any disk is internal, sata, or nvme (not just USB)
+      // Types from API: 'internal', 'usb', 'sata', 'nvme'
+      const internalTypes = ['internal', 'sata', 'nvme'];
+      const hasInternalDisk = disks.some(disk =>
+        disk.type && internalTypes.includes(disk.type) && disk.state !== 'disabled'
+      );
+
+      if (hasInternalDisk) {
+        console.log('[ModelDetection] Found internal/sata/nvme disk(s):', disks.filter(d => internalTypes.includes(d.type || '')).map(d => d.type));
+      }
+
+      return hasInternalDisk;
+    } catch (error) {
+      console.log('[ModelDetection] Could not check storage disks:', error);
+      return false;
+    }
   }
 
   /**

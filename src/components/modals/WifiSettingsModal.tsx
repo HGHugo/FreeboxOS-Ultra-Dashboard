@@ -1,15 +1,19 @@
-import React, { useState, useEffect } from 'react';
-import { X, Shield, Clock, Wifi, Loader2, Check, AlertTriangle, Save, Plus, Trash2 } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { X, Shield, Clock, Wifi, Loader2, Check, AlertTriangle, Save, Plus, Trash2, ExternalLink, Timer, Users, Link2 } from 'lucide-react';
 import { api } from '../../api/client';
 import { API_ROUTES } from '../../utils/constants';
+import { useAuthStore } from '../../stores/authStore';
+import { useSystemStore } from '../../stores';
+import { getPermissionErrorMessage, getFreeboxSettingsUrl } from '../../utils/permissions';
+import { useWifiStore } from '../../stores/wifiStore';
 
 interface WifiSettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  initialTab?: 'filter' | 'planning' | 'wps';
+  initialTab?: 'filter' | 'planning' | 'wps' | 'temp-disable' | 'guest' | 'mlo';
 }
 
-type TabType = 'filter' | 'planning' | 'wps';
+type TabType = 'filter' | 'planning' | 'wps' | 'temp-disable' | 'guest' | 'mlo';
 
 interface MacFilterRule {
   mac: string;
@@ -89,6 +93,32 @@ export const WifiSettingsModal: React.FC<WifiSettingsModalProps> = ({
   onClose,
   initialTab = 'filter'
 }) => {
+  // Get permissions from auth store
+  const { permissions, freeboxUrl } = useAuthStore();
+  const hasSettingsPermission = permissions.settings === true;
+
+  // Get system info to check model (MLO only available on Ultra/v9)
+  const { info: systemInfo } = useSystemStore();
+  // Ultra is fbxgw9 (v9) - check board_name (fbxgw9r) or box_model_name (Freebox v9)
+  const isUltraModel =
+    systemInfo?.board_name?.toLowerCase().includes('fbxgw9') ||
+    systemInfo?.box_model_name?.toLowerCase().includes('v9') ||
+    systemInfo?.box_model_name?.toLowerCase().includes('ultra');
+
+  // Get WiFi store for v13/v14 features
+  const {
+    tempDisableStatus,
+    guestConfig,
+    mloConfig,
+    fetchTempDisableStatus,
+    setTempDisable,
+    cancelTempDisable,
+    fetchGuestConfig,
+    updateGuestConfig,
+    fetchMloConfig,
+    updateMloConfig
+  } = useWifiStore();
+
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -110,14 +140,123 @@ export const WifiSettingsModal: React.FC<WifiSettingsModalProps> = ({
   const [savingPlanning, setSavingPlanning] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+  // v13+ Temp Disable state
+  const [tempDisableDuration, setTempDisableDuration] = useState(30); // minutes
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const countdownRef = useRef<NodeJS.Timeout | null>(null);
+
+  // v14+ Guest Network state
+  const [guestSsid, setGuestSsid] = useState('');
+  const [guestKey, setGuestKey] = useState('');
+  const [savingGuest, setSavingGuest] = useState(false);
+
+  // v14+ MLO state
+  const [savingMlo, setSavingMlo] = useState(false);
+
 
   // Fetch data when modal opens
   useEffect(() => {
     if (isOpen) {
       if (activeTab === 'filter') fetchMacFilter();
       if (activeTab === 'planning') fetchPlanning();
+      if (activeTab === 'temp-disable') fetchTempDisableStatus();
+      if (activeTab === 'guest') fetchGuestConfig();
+      if (activeTab === 'mlo') fetchMloConfig();
     }
-  }, [isOpen, activeTab]);
+  }, [isOpen, activeTab, fetchTempDisableStatus, fetchGuestConfig, fetchMloConfig]);
+
+  // Sync guest config to local state
+  useEffect(() => {
+    if (guestConfig) {
+      setGuestSsid(guestConfig.ssid || '');
+      setGuestKey(guestConfig.key || '');
+    }
+  }, [guestConfig]);
+
+  // Countdown timer for temp disable
+  useEffect(() => {
+    if (tempDisableStatus?.enabled && tempDisableStatus.remaining_time && tempDisableStatus.remaining_time > 0) {
+      setCountdown(tempDisableStatus.remaining_time);
+    } else {
+      setCountdown(null);
+    }
+  }, [tempDisableStatus]);
+
+  // Countdown interval
+  useEffect(() => {
+    if (countdown !== null && countdown > 0) {
+      countdownRef.current = setInterval(() => {
+        setCountdown(prev => {
+          if (prev === null || prev <= 1) {
+            if (countdownRef.current) clearInterval(countdownRef.current);
+            fetchTempDisableStatus();
+            return null;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (countdownRef.current) clearInterval(countdownRef.current);
+    };
+  }, [countdown, fetchTempDisableStatus]);
+
+  // Format countdown display
+  const formatCountdown = useCallback((seconds: number): string => {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    if (h > 0) return `${h}h ${m.toString().padStart(2, '0')}m ${s.toString().padStart(2, '0')}s`;
+    if (m > 0) return `${m}m ${s.toString().padStart(2, '0')}s`;
+    return `${s}s`;
+  }, []);
+
+  // Handle temp disable
+  const handleTempDisable = async () => {
+    setLoading(true);
+    const success = await setTempDisable(tempDisableDuration * 60);
+    if (success) {
+      setSuccessMessage('WiFi désactivé temporairement');
+      setTimeout(() => setSuccessMessage(null), 3000);
+    }
+    setLoading(false);
+  };
+
+  // Handle cancel temp disable
+  const handleCancelTempDisable = async () => {
+    setLoading(true);
+    const success = await cancelTempDisable();
+    if (success) {
+      setSuccessMessage('Désactivation annulée');
+      setTimeout(() => setSuccessMessage(null), 3000);
+    }
+    setLoading(false);
+  };
+
+  // Handle guest config save
+  const handleSaveGuestConfig = async () => {
+    setSavingGuest(true);
+    const success = await updateGuestConfig({
+      ssid: guestSsid,
+      key: guestKey
+    });
+    if (success) {
+      setSuccessMessage('Configuration invité enregistrée');
+      setTimeout(() => setSuccessMessage(null), 3000);
+    }
+    setSavingGuest(false);
+  };
+
+  // Handle MLO toggle
+  const handleToggleMlo = async (enabled: boolean) => {
+    setSavingMlo(true);
+    const success = await updateMloConfig({ enabled });
+    if (success) {
+      setSuccessMessage(`MLO ${enabled ? 'activé' : 'désactivé'}`);
+      setTimeout(() => setSuccessMessage(null), 3000);
+    }
+    setSavingMlo(false);
+  };
 
   const fetchMacFilter = async () => {
     setLoading(true);
@@ -262,33 +401,69 @@ export const WifiSettingsModal: React.FC<WifiSettingsModalProps> = ({
           </button>
         </div>
 
-        {/* Tabs */}
-        <div className="flex border-b border-gray-800 bg-[#1a1a1a]">
+        {/* Tabs - scrollable on mobile */}
+        <div className="flex border-b border-gray-800 bg-[#1a1a1a] overflow-x-auto">
+          <button
+            onClick={() => setActiveTab('temp-disable')}
+            className={`px-4 py-3 text-sm font-medium transition-colors flex items-center gap-2 whitespace-nowrap ${
+              activeTab === 'temp-disable'
+                ? 'text-red-400 border-b-2 border-red-400'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            <Timer size={16} />
+            Pause
+          </button>
+          <button
+            onClick={() => setActiveTab('guest')}
+            className={`px-4 py-3 text-sm font-medium transition-colors flex items-center gap-2 whitespace-nowrap ${
+              activeTab === 'guest'
+                ? 'text-purple-400 border-b-2 border-purple-400'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            <Users size={16} />
+            Invité
+          </button>
+          {/* MLO tab - only visible on Freebox Ultra (WiFi 7) */}
+          {isUltraModel && (
+            <button
+              onClick={() => setActiveTab('mlo')}
+              className={`px-4 py-3 text-sm font-medium transition-colors flex items-center gap-2 whitespace-nowrap ${
+                activeTab === 'mlo'
+                  ? 'text-cyan-400 border-b-2 border-cyan-400'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <Link2 size={16} />
+              MLO
+            </button>
+          )}
           <button
             onClick={() => setActiveTab('filter')}
-            className={`px-6 py-3 text-sm font-medium transition-colors flex items-center gap-2 ${
+            className={`px-4 py-3 text-sm font-medium transition-colors flex items-center gap-2 whitespace-nowrap ${
               activeTab === 'filter'
                 ? 'text-blue-400 border-b-2 border-blue-400'
                 : 'text-gray-400 hover:text-white'
             }`}
           >
             <Shield size={16} />
-            Filtrage MAC
+            Filtrage
           </button>
           <button
             onClick={() => setActiveTab('planning')}
-            className={`px-6 py-3 text-sm font-medium transition-colors flex items-center gap-2 ${
+            className={`px-4 py-3 text-sm font-medium transition-colors flex items-center gap-2 whitespace-nowrap ${
               activeTab === 'planning'
                 ? 'text-emerald-400 border-b-2 border-emerald-400'
                 : 'text-gray-400 hover:text-white'
             }`}
           >
             <Clock size={16} />
-            Planification
+            Planning
           </button>
           <button
             onClick={() => setActiveTab('wps')}
-            className={`px-6 py-3 text-sm font-medium transition-colors flex items-center gap-2 ${
+            className={`px-4 py-3 text-sm font-medium transition-colors flex items-center gap-2 whitespace-nowrap ${
               activeTab === 'wps'
                 ? 'text-orange-400 border-b-2 border-orange-400'
                 : 'text-gray-400 hover:text-white'
@@ -301,6 +476,27 @@ export const WifiSettingsModal: React.FC<WifiSettingsModalProps> = ({
 
         {/* Content */}
         <div className="flex-1 overflow-auto p-6">
+          {/* Permission warning */}
+          {!hasSettingsPermission && (
+            <div className="mb-4 p-4 bg-amber-900/20 border border-amber-700/50 rounded-xl">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="text-amber-400 flex-shrink-0 mt-0.5" size={20} />
+                <div className="flex-1">
+                  <p className="text-amber-400 text-sm">{getPermissionErrorMessage('settings')}</p>
+                  <a
+                    href={getFreeboxSettingsUrl(freeboxUrl)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 mt-2 text-amber-300 hover:text-amber-200 text-sm underline"
+                  >
+                    Ouvrir les paramètres Freebox
+                    <ExternalLink size={12} />
+                  </a>
+                </div>
+              </div>
+            </div>
+          )}
+
           {error && (
             <div className="mb-4 p-3 bg-red-900/30 border border-red-700 rounded-lg text-red-400 text-sm flex items-center gap-2">
               <AlertTriangle size={16} />
@@ -314,6 +510,229 @@ export const WifiSettingsModal: React.FC<WifiSettingsModalProps> = ({
             </div>
           ) : (
             <>
+              {/* Temp Disable Tab (v13+) */}
+              {activeTab === 'temp-disable' && (
+                <div className="space-y-4">
+                  {/* Status card */}
+                  <div className="p-6 bg-[#1a1a1a] rounded-xl border border-gray-800 text-center">
+                    <div className={`w-20 h-20 mx-auto rounded-full flex items-center justify-center mb-4 ${
+                      countdown !== null ? 'bg-red-500/20' : 'bg-gray-800'
+                    }`}>
+                      <Timer size={40} className={countdown !== null ? 'text-red-400' : 'text-gray-400'} />
+                    </div>
+
+                    {countdown !== null ? (
+                      <>
+                        <h3 className="text-lg font-medium text-red-400 mb-2">
+                          WiFi désactivé temporairement
+                        </h3>
+                        <div className="text-4xl font-bold text-white mb-4 font-mono">
+                          {formatCountdown(countdown)}
+                        </div>
+                        <button
+                          onClick={handleCancelTempDisable}
+                          className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-medium transition-colors"
+                        >
+                          Réactiver maintenant
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <h3 className="text-lg font-medium text-white mb-2">
+                          Désactivation temporaire
+                        </h3>
+                        <p className="text-sm text-gray-500 mb-6">
+                          Désactive le WiFi pendant une durée définie, puis le réactive automatiquement
+                        </p>
+
+                        {/* Duration selector */}
+                        <div className="flex items-center justify-center gap-4 mb-6">
+                          <label className="text-sm text-gray-400">Durée :</label>
+                          <select
+                            value={tempDisableDuration}
+                            onChange={(e) => setTempDisableDuration(parseInt(e.target.value))}
+                            className="px-4 py-2 bg-[#252525] border border-gray-700 rounded-lg text-white focus:outline-none focus:border-red-500"
+                          >
+                            <option value={5}>5 minutes</option>
+                            <option value={15}>15 minutes</option>
+                            <option value={30}>30 minutes</option>
+                            <option value={60}>1 heure</option>
+                            <option value={120}>2 heures</option>
+                            <option value={240}>4 heures</option>
+                            <option value={480}>8 heures</option>
+                          </select>
+                        </div>
+
+                        <button
+                          onClick={handleTempDisable}
+                          className="px-6 py-3 bg-red-600 hover:bg-red-500 text-white rounded-lg font-medium transition-colors"
+                        >
+                          Désactiver le WiFi
+                        </button>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Success message */}
+                  {successMessage && (
+                    <div className="p-3 bg-emerald-900/30 border border-emerald-700 rounded-lg text-emerald-400 text-sm flex items-center gap-2">
+                      <Check size={16} />
+                      {successMessage}
+                    </div>
+                  )}
+
+                  {/* Info */}
+                  <div className="p-4 bg-blue-900/20 border border-blue-700/50 rounded-lg">
+                    <p className="text-xs text-blue-400">
+                      <strong>Astuce :</strong> Cette fonction est utile pour couper temporairement
+                      le WiFi (ex: pendant la nuit, pour des enfants) sans avoir à le réactiver manuellement.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Guest Network Tab (v14+) */}
+              {activeTab === 'guest' && (
+                <div className="space-y-4">
+                  {/* Header with toggle */}
+                  <div className="flex items-center justify-between p-4 bg-[#1a1a1a] rounded-xl border border-gray-800">
+                    <div>
+                      <h3 className="text-white font-medium">Réseau Invité</h3>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Réseau WiFi séparé pour vos invités
+                      </p>
+                    </div>
+                    <div className={`px-3 py-1 rounded-full text-xs font-medium ${
+                      guestConfig?.enabled
+                        ? 'bg-emerald-500/20 text-emerald-400'
+                        : 'bg-gray-700 text-gray-400'
+                    }`}>
+                      {guestConfig?.enabled ? 'Activé' : 'Désactivé'}
+                    </div>
+                  </div>
+
+                  {/* Success message */}
+                  {successMessage && (
+                    <div className="p-3 bg-emerald-900/30 border border-emerald-700 rounded-lg text-emerald-400 text-sm flex items-center gap-2">
+                      <Check size={16} />
+                      {successMessage}
+                    </div>
+                  )}
+
+                  {/* Config form */}
+                  <div className="p-4 bg-[#1a1a1a] rounded-xl border border-gray-800 space-y-4">
+                    <div>
+                      <label className="text-xs text-gray-500 mb-1 block">Nom du réseau (SSID)</label>
+                      <input
+                        type="text"
+                        placeholder="Ex: Freebox_Invités"
+                        value={guestSsid}
+                        onChange={(e) => setGuestSsid(e.target.value)}
+                        className="w-full px-3 py-2 bg-[#252525] border border-gray-700 rounded-lg text-white text-sm placeholder-gray-600 focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 mb-1 block">Mot de passe</label>
+                      <input
+                        type="text"
+                        placeholder="Minimum 8 caractères"
+                        value={guestKey}
+                        onChange={(e) => setGuestKey(e.target.value)}
+                        className="w-full px-3 py-2 bg-[#252525] border border-gray-700 rounded-lg text-white text-sm font-mono placeholder-gray-600 focus:outline-none focus:border-purple-500"
+                      />
+                      {guestKey.length > 0 && guestKey.length < 8 && (
+                        <p className="text-xs text-orange-400 mt-1">Le mot de passe doit contenir au moins 8 caractères</p>
+                      )}
+                    </div>
+                    <button
+                      onClick={handleSaveGuestConfig}
+                      disabled={savingGuest || (guestKey.length > 0 && guestKey.length < 8)}
+                      className="w-full px-4 py-3 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                    >
+                      {savingGuest ? (
+                        <Loader2 size={18} className="animate-spin" />
+                      ) : (
+                        <Save size={18} />
+                      )}
+                      Enregistrer
+                    </button>
+                  </div>
+
+                  {/* Info */}
+                  <div className="p-4 bg-blue-900/20 border border-blue-700/50 rounded-lg">
+                    <p className="text-xs text-blue-400">
+                      <strong>Note :</strong> Le réseau invité est isolé de votre réseau principal.
+                      Les appareils connectés au réseau invité ne peuvent pas accéder à vos appareils personnels.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* MLO Tab (v14+ WiFi 7) - Only for Freebox Ultra */}
+              {activeTab === 'mlo' && isUltraModel && (
+                <div className="space-y-4">
+                  {/* Header */}
+                  <div className="p-6 bg-[#1a1a1a] rounded-xl border border-gray-800 text-center">
+                    <div className={`w-20 h-20 mx-auto rounded-full flex items-center justify-center mb-4 ${
+                      mloConfig?.enabled ? 'bg-cyan-500/20' : 'bg-gray-800'
+                    }`}>
+                      <Link2 size={40} className={mloConfig?.enabled ? 'text-cyan-400' : 'text-gray-400'} />
+                    </div>
+
+                    <h3 className="text-lg font-medium text-white mb-2">
+                      Multi-Link Operation (MLO)
+                    </h3>
+                    <p className="text-sm text-gray-500 mb-6">
+                      Technologie WiFi 7 permettant aux appareils compatibles d'utiliser
+                      plusieurs bandes simultanément pour des performances optimales.
+                    </p>
+
+                    {/* Success message */}
+                    {successMessage && (
+                      <div className="mb-4 p-3 bg-emerald-900/30 border border-emerald-700 rounded-lg text-emerald-400 text-sm flex items-center justify-center gap-2">
+                        <Check size={16} />
+                        {successMessage}
+                      </div>
+                    )}
+
+                    {/* Toggle */}
+                    <button
+                      onClick={() => handleToggleMlo(!mloConfig?.enabled)}
+                      disabled={savingMlo}
+                      className={`px-8 py-3 rounded-lg font-medium transition-colors ${
+                        mloConfig?.enabled
+                          ? 'bg-red-600 hover:bg-red-500 text-white'
+                          : 'bg-cyan-600 hover:bg-cyan-500 text-white'
+                      }`}
+                    >
+                      {savingMlo ? (
+                        <Loader2 size={18} className="animate-spin mx-auto" />
+                      ) : mloConfig?.enabled ? (
+                        'Désactiver MLO'
+                      ) : (
+                        'Activer MLO'
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Info */}
+                  <div className="p-4 bg-cyan-900/20 border border-cyan-700/50 rounded-lg">
+                    <p className="text-xs text-cyan-400">
+                      <strong>WiFi 7 uniquement :</strong> MLO (Multi-Link Operation) permet aux appareils
+                      WiFi 7 compatibles d'agréger plusieurs liens radio (2.4GHz + 5GHz + 6GHz) pour
+                      une bande passante accrue et une latence réduite.
+                    </p>
+                  </div>
+
+                  <div className="p-4 bg-yellow-900/20 border border-yellow-700/50 rounded-lg">
+                    <p className="text-xs text-yellow-400">
+                      <strong>Compatibilité :</strong> Seuls les appareils WiFi 7 (802.11be) peuvent
+                      bénéficier du MLO. Les appareils plus anciens continueront à fonctionner normalement.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* MAC Filter Tab */}
               {activeTab === 'filter' && (
                 <div className="space-y-4">

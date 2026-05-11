@@ -37,6 +37,25 @@ export interface RegistrationStatus {
 }
 
 // System types
+export interface RebootSchedule {
+  enabled: boolean;
+  mapping: Record<number, string>; // Key: day (0-6), Value: "HH:MM"
+}
+
+// Sensor data format (API v8+)
+export interface SystemSensor {
+  id: string;      // e.g. "temp_cpu0", "temp_hdd", "t1", "cpu_ap"
+  name: string;    // e.g. "Température CPU 0", "Disque dur"
+  value: number;   // Temperature in °C
+}
+
+// Fan data format (API v8+)
+export interface SystemFan {
+  id: string;      // e.g. "main", "secondary-fan"
+  name: string;    // e.g. "Ventilateur 1", "Ventilateur 2"
+  value: number;   // RPM
+}
+
 export interface SystemInfo {
   firmware_version: string;
   mac: string;
@@ -44,18 +63,24 @@ export interface SystemInfo {
   uptime: string;
   uptime_val: number;
   board_name: string;
-  // Temperature fields - varies by Freebox model
-  temp_cpum?: number;      // Older Freebox models
-  temp_sw?: number;        // Older models
-  temp_cpub?: number;      // Older models
-  temp_cpu0?: number;      // Freebox v9+
-  temp_cpu1?: number;      // Freebox v9+
-  temp_cpu2?: number;      // Freebox v9+
-  temp_cpu3?: number;      // Freebox v9+
-  fan_rpm: number;
+  // API v8+: sensors array for temperatures
+  sensors?: SystemSensor[];
+  // API v8+: fans array for fan speeds
+  fans?: SystemFan[];
+  // Temperature fields vary by model (legacy API < v8):
+  // Ultra v9: temp_cpu0, temp_cpu1, temp_cpu2, temp_cpu3 (4 CPU cores)
+  // Other models: temp_cpum, temp_sw, temp_cpub (legacy fields)
+  temp_cpu0?: number;      // CPU core 0 (Ultra)
+  temp_cpu1?: number;      // CPU core 1 (Ultra)
+  temp_cpu2?: number;      // CPU core 2 (Ultra)
+  temp_cpu3?: number;      // CPU core 3 (Ultra)
+  temp_cpum?: number;      // CPU main (Delta/Pop/Revolution)
+  temp_sw?: number;        // Switch (Delta/Pop/Revolution)
+  temp_cpub?: number;      // CPU box (Delta/Pop/Revolution)
+  fan_rpm?: number;        // Legacy fan RPM (now in fans array for v8+)
   box_authenticated: boolean;
   disk_status: string;
-  box_flavor: string;
+  box_flavor?: string;
   user_main_storage: string;
   // Added from api_version endpoint
   box_model_name?: string; // e.g. "Freebox v9 (r1)"
@@ -248,9 +273,13 @@ export interface DownloadStats {
 export interface DownloadTracker {
   announce: string;
   is_enabled: boolean;
-  status: string;
-  leechers: number;
-  seeders: number;
+  is_backup: boolean;
+  status: 'unannounced' | 'announcing' | 'announce_failed' | 'announced';
+  interval: number;
+  min_interval: number;
+  reannounce_in: number;
+  nseeders: number;
+  nleechers: number;
 }
 
 export interface DownloadPeer {
@@ -261,6 +290,33 @@ export interface DownloadPeer {
   tx_rate: number;
   rx_pct: number;
   tx_pct: number;
+  rx: number;
+  tx: number;
+  progress: number;
+  state: 'disconnected' | 'connecting' | 'handshaking' | 'ready';
+  origin: 'tracker' | 'incoming' | 'dht' | 'pex' | 'user';
+  protocol: 'tcp' | 'tcp_obfuscated' | 'udp';
+  country_code: string;
+}
+
+export interface DownloadFile {
+  id: string;
+  task_id: string;
+  filepath: string;
+  name: string;
+  mimetype: string;
+  size: number;
+  rx: number;
+  status: 'queued' | 'error' | 'done';
+  error: string;
+  priority: 'no_dl' | 'low' | 'normal' | 'high';
+}
+
+export interface DownloadBlacklistEntry {
+  host: string;
+  reason: 'not_blacklisted' | 'crypto_not_supported' | 'connect_fail' | 'hs_timeout' | 'hs_failed' | 'hs_crypt_failed' | 'hs_crypto_disabled' | 'torrent_not_found' | 'read_failed' | 'write_failed' | 'crap_received' | 'conn_closed' | 'timeout' | 'blocklist' | 'user';
+  expire: number;
+  global: boolean;
 }
 
 // VM types
@@ -273,21 +329,26 @@ export interface VirtualMachine {
   memory: number;
   disk_path: string;
   disk_type: string;
+  disk_size?: number;      // Total disk size in bytes
   enable_screen: boolean;
   // Extended stats (may not always be available)
-  cpu_usage?: number;
-  memory_usage?: number;
-  disk_usage?: number;
+  cpu_usage?: number;      // CPU usage percentage (0-100)
+  memory_usage?: number;   // Memory usage in bytes
+  disk_usage?: number;     // Disk usage in bytes
 }
 
 // TV Channel types
 export interface TvChannel {
   uuid: string;
   name: string;
-  number: number;
+  short_name?: string;
+  number?: number;
   logo_url?: string;
   quality?: string;
   bouquet?: string;
+  available?: boolean;
+  has_service?: boolean;
+  has_abo?: boolean;
 }
 
 export interface TvBouquet {
@@ -347,9 +408,30 @@ export interface PvrProgrammed {
 }
 
 export interface PvrConfig {
-  enabled: boolean;
-  max_time_shift: number;
-  storage_path: string;
+  margin_before: number;
+  margin_after: number;
+}
+
+// EPG (Electronic Program Guide) types
+export interface EpgProgram {
+  id: string;
+  date: number; // epoch timestamp
+  duration: number; // in seconds
+  title: string;
+  desc?: string;
+  picture?: string;
+  picture_big?: string;
+  category?: number;
+  category_name?: string;
+  prev?: string;
+  next?: string;
+}
+
+// API returns: { "uuid-webtv-XXX": { "<timestamp>_<hash>": EpgProgram } }
+export interface EpgByTimeResponse {
+  [channelUuid: string]: {
+    [programKey: string]: EpgProgram;
+  };
 }
 
 // Call types
@@ -386,4 +468,25 @@ export interface Contact {
   last_update?: number;
   // Numbers can be included when fetching contact details
   numbers?: ContactNumber[];
+}
+
+// DHCP types
+export interface DhcpConfig {
+  enabled: boolean;
+  gateway: string;
+  netmask: string;
+  ip_range_start: string;
+  ip_range_end: string;
+  always_broadcast: boolean;
+  sticky_assign: boolean;
+  dns: string[];
+}
+
+export interface DhcpStaticLease {
+  id: string;
+  mac: string;
+  ip: string;
+  comment?: string;
+  hostname?: string;
+  host?: LanHost;
 }

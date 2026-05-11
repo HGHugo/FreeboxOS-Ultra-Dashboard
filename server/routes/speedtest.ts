@@ -42,6 +42,7 @@ function parsePingOutput(output: string): { avg: number; mdev: number; loss: num
     }
 
     if (!isWindows) {
+      // Parse packet loss (e.g., "0% packet loss")
       const lossMatch = output.match(/(\d+(?:\.\d+)?)% packet loss/);
       loss = lossMatch ? parseFloat(lossMatch[1]) : 0;
 
@@ -55,20 +56,45 @@ function parsePingOutput(output: string): { avg: number; mdev: number; loss: num
       } else {
         loss = loss === 0 && !output.includes('time=') ? 100 : loss;
       }
-    } 
-    
+    }
+
     // --- WINDOWS CASE ---
     else {
       const lossMatchWin = output.match(/\((\d+)%\s*(?:perte|loss)\)/i);
       loss = lossMatchWin ? parseFloat(lossMatchWin[1]) : 0;
 
+      // Match average from Windows ping (French: "Moyenne", English: "Average")
       const avgMatch = output.match(/(?:Moyenne|Average)\s*=\s*(\d+)ms/i);
-      
+
       if (avgMatch) {
         avg = parseFloat(avgMatch[1]);
-        mdev = 0; 
       } else {
-         loss = 100;
+        loss = 100;
+      }
+
+      // Windows doesn't provide jitter directly, so we calculate it from individual ping times
+      // Extract all "time=Xms" values and calculate standard deviation
+      if (times && times.length > 1) {
+        const mean = times.reduce((a, b) => a + b, 0) / times.length;
+        const squaredDiffs = times.map(t => Math.pow(t - mean, 2));
+        const avgSquaredDiff = squaredDiffs.reduce((a, b) => a + b, 0) / squaredDiffs.length;
+        mdev = Math.sqrt(avgSquaredDiff);
+      } else {
+        // Try to extract individual times from output
+        const timeMatches = output.match(/(?:temps|time)[=<](\d+)ms/gi);
+        if (timeMatches && timeMatches.length > 1) {
+          const extractedTimes = timeMatches.map(m => {
+            const numMatch = m.match(/(\d+)/);
+            return numMatch ? parseFloat(numMatch[1]) : 0;
+          }).filter(t => t > 0);
+
+          if (extractedTimes.length > 1) {
+            const mean = extractedTimes.reduce((a, b) => a + b, 0) / extractedTimes.length;
+            const squaredDiffs = extractedTimes.map(t => Math.pow(t - mean, 2));
+            const avgSquaredDiff = squaredDiffs.reduce((a, b) => a + b, 0) / squaredDiffs.length;
+            mdev = Math.sqrt(avgSquaredDiff);
+          }
+        }
       }
     }
 
@@ -98,6 +124,8 @@ router.get('/ping', asyncHandler(async (req, res) => {
       jitter: Math.round(stats.mdev * 100) / 100,
       packetLoss: stats.loss
     };
+
+    console.log('[Speedtest] Ping result:', result, 'raw stats:', stats);
 
     res.json({
       success: true,
@@ -172,7 +200,7 @@ router.post('/run', asyncHandler(async (req, res) => {
     };
 
     try {
-      const { stdout } = await execAsync(`ping -c 10 ${pingTarget}`, { timeout: 15000 });
+      const { stdout } = await execAsync(`ping ${PING_FLAG} 10 ${pingTarget}`, { timeout: 15000 });
       const stats = parsePingOutput(stdout);
       pingResult = {
         target: pingTarget,

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { api } from '../api/client';
 import { API_ROUTES } from '../utils/constants';
-import type { Download, DownloadStats, DownloadTracker, DownloadPeer } from '../types/api';
+import type { Download, DownloadStats, DownloadTracker, DownloadPeer, DownloadFile, DownloadBlacklistEntry } from '../types/api';
 import type { DownloadTask } from '../types';
 
 interface DownloadsState {
@@ -15,11 +15,18 @@ interface DownloadsState {
   fetchDownloads: () => Promise<void>;
   fetchStats: () => Promise<void>;
   addDownload: (url: string, downloadDir?: string) => Promise<boolean>;
+  addDownloadFromFile: (fileBase64: string, filename: string, downloadDir?: string) => Promise<boolean>;
   pauseDownload: (id: string) => Promise<void>;
   resumeDownload: (id: string) => Promise<void>;
   deleteDownload: (id: string, deleteFiles?: boolean) => Promise<void>;
   getTrackers: (id: string) => Promise<DownloadTracker[]>;
   getPeers: (id: string) => Promise<DownloadPeer[]>;
+  getFiles: (id: string) => Promise<DownloadFile[]>;
+  updateFilePriority: (taskId: string, fileId: string, priority: string) => Promise<boolean>;
+  getPieces: (id: string) => Promise<string>;
+  getBlacklist: (id: string) => Promise<DownloadBlacklistEntry[]>;
+  emptyBlacklist: (id: string) => Promise<boolean>;
+  getLog: (id: string) => Promise<string>;
 }
 
 // Map API status to UI status
@@ -108,6 +115,22 @@ export const useDownloadsStore = create<DownloadsState>((set, get) => ({
     }
   },
 
+  addDownloadFromFile: async (fileBase64: string, filename: string, downloadDir?: string) => {
+    try {
+      const response = await api.post(API_ROUTES.DOWNLOADS, { fileBase64, filename, downloadDir });
+      if (response.success) {
+        // Refresh downloads list
+        const store = useDownloadsStore.getState();
+        store.fetchDownloads();
+        return true;
+      }
+      return false;
+    } catch {
+      set({ error: 'Failed to add download from file' });
+      return false;
+    }
+  },
+
   pauseDownload: async (id: string) => {
     try {
       await api.put(`${API_ROUTES.DOWNLOADS}/${id}`, { status: 'stopped' });
@@ -153,6 +176,60 @@ export const useDownloadsStore = create<DownloadsState>((set, get) => ({
       return response.success && response.result ? response.result : [];
     } catch {
       return [];
+    }
+  },
+
+  getFiles: async (id: string) => {
+    try {
+      const response = await api.get<DownloadFile[]>(`${API_ROUTES.DOWNLOADS}/${id}/files`);
+      return response.success && response.result ? response.result : [];
+    } catch {
+      return [];
+    }
+  },
+
+  updateFilePriority: async (taskId: string, fileId: string, priority: string) => {
+    try {
+      const response = await api.put(`${API_ROUTES.DOWNLOADS}/${taskId}/files/${fileId}`, { priority });
+      return response.success;
+    } catch {
+      return false;
+    }
+  },
+
+  getPieces: async (id: string) => {
+    try {
+      const response = await api.get<string>(`${API_ROUTES.DOWNLOADS}/${id}/pieces`);
+      return response.success && response.result ? response.result : '';
+    } catch {
+      return '';
+    }
+  },
+
+  getBlacklist: async (id: string) => {
+    try {
+      const response = await api.get<DownloadBlacklistEntry[]>(`${API_ROUTES.DOWNLOADS}/${id}/blacklist`);
+      return response.success && response.result ? response.result : [];
+    } catch {
+      return [];
+    }
+  },
+
+  emptyBlacklist: async (id: string) => {
+    try {
+      const response = await api.delete(`${API_ROUTES.DOWNLOADS}/${id}/blacklist/empty`);
+      return response.success;
+    } catch {
+      return false;
+    }
+  },
+
+  getLog: async (id: string) => {
+    try {
+      const response = await api.get<string>(`${API_ROUTES.DOWNLOADS}/${id}/log`);
+      return response.success && response.result ? response.result : '';
+    } catch {
+      return '';
     }
   }
 }));

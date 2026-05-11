@@ -2,6 +2,10 @@
 # FreeboxOS Ultra Dashboard - Docker Compose
 # ===========================================
 #
+# Production deployment using pre-built image from GitHub Container Registry
+#
+# For local development (building from source), use docker-compose.local.yml instead
+#
 # Usage:
 #   docker-compose up -d
 #
@@ -12,12 +16,13 @@
 # Examples:
 #   DASHBOARD_PORT=8080 docker-compose up -d
 #   docker-compose --env-file .env up -d
+#
+# MCP Server (optional — Claude AI integration):
+#   docker-compose --profile mcp up -d
 
 services:
   freebox-dashboard:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/hghugo/freeboxos-ultra-dashboard:latest
     container_name: freebox-dashboard
     restart: unless-stopped
 
@@ -43,13 +48,13 @@ services:
     # Option 2: Host mode - direct network access (uncomment below)
     # network_mode: host
 
-    # Health check
+    # Health check (use 127.0.0.1 instead of localhost to avoid IPv6 issues)
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 40s
 
     # Resource limits (optional)
     # deploy:
@@ -61,7 +66,27 @@ services:
     #       cpus: '0.1'
     #       memory: 128M
 
-# Named volume for persistent token storage
+  # ===========================================
+  # MCP Server (optional) — Claude AI integration
+  # ===========================================
+  # Activate with: docker-compose --profile mcp up -d
+  # See: https://github.com/leto1210/mafreebox-mcpserver
+  freebox-mcp:
+    image: ghcr.io/leto1210/mafreebox-mcpserver:latest
+    container_name: freebox-mcp
+    restart: unless-stopped
+    profiles:
+      - mcp
+    environment:
+      - FREEBOX_HOST=${FREEBOX_HOST:-mafreebox.freebox.fr}
+      - FREEBOX_TOKEN_FILE=/app/data/freebox_token.json
+    volumes:
+      - freebox_mcp_data:/app/data
+    # MCP servers communicate via stdio — no ports exposed
+
+# Named volumes for persistent token storage
 volumes:
   freebox_data:
     name: freebox_dashboard_data
+  freebox_mcp_data:
+    name: freebox_mcp_data

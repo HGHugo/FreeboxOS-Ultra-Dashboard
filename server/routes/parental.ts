@@ -38,15 +38,53 @@ router.delete('/profiles/:id', asyncHandler(async (req, res) => {
 
 // ===== Network Control =====
 
-// GET /api/parental/network-control - Get network control rules
+// GET /api/parental/network-control - Get network control for all profiles
 router.get('/network-control', asyncHandler(async (_req, res) => {
   const result = await freeboxApi.getNetworkControl();
   res.json(result);
 }));
 
-// PUT /api/parental/network-control/:id - Update network control for host
-router.put('/network-control/:id', asyncHandler(async (req, res) => {
-  const result = await freeboxApi.updateNetworkControl(req.params.id, req.body);
+// GET /api/parental/network-control/:profileId - Get network control for a specific profile
+router.get('/network-control/:profileId', asyncHandler(async (req, res) => {
+  const result = await freeboxApi.getNetworkControlForProfile(parseInt(req.params.profileId));
+  res.json(result);
+}));
+
+// PUT /api/parental/network-control/:profileId - Update network control for a profile
+router.put('/network-control/:profileId', asyncHandler(async (req, res) => {
+  const result = await freeboxApi.updateNetworkControlForProfile(parseInt(req.params.profileId), req.body);
+  res.json(result);
+}));
+
+// ===== Network Control Rules =====
+
+// GET /api/parental/network-control/:profileId/rules - Get rules for a profile
+router.get('/network-control/:profileId/rules', asyncHandler(async (req, res) => {
+  const result = await freeboxApi.getNetworkControlRules(parseInt(req.params.profileId));
+  res.json(result);
+}));
+
+// GET /api/parental/network-control/:profileId/rules/:ruleId - Get a specific rule
+router.get('/network-control/:profileId/rules/:ruleId', asyncHandler(async (req, res) => {
+  const result = await freeboxApi.getNetworkControlRule(parseInt(req.params.profileId), parseInt(req.params.ruleId));
+  res.json(result);
+}));
+
+// POST /api/parental/network-control/:profileId/rules - Create a rule
+router.post('/network-control/:profileId/rules', asyncHandler(async (req, res) => {
+  const result = await freeboxApi.createNetworkControlRule(parseInt(req.params.profileId), req.body);
+  res.json(result);
+}));
+
+// PUT /api/parental/network-control/:profileId/rules/:ruleId - Update a rule
+router.put('/network-control/:profileId/rules/:ruleId', asyncHandler(async (req, res) => {
+  const result = await freeboxApi.updateNetworkControlRule(parseInt(req.params.profileId), parseInt(req.params.ruleId), req.body);
+  res.json(result);
+}));
+
+// DELETE /api/parental/network-control/:profileId/rules/:ruleId - Delete a rule
+router.delete('/network-control/:profileId/rules/:ruleId', asyncHandler(async (req, res) => {
+  const result = await freeboxApi.deleteNetworkControlRule(parseInt(req.params.profileId), parseInt(req.params.ruleId));
   res.json(result);
 }));
 

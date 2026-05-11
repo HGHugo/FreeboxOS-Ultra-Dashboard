@@ -54,10 +54,12 @@ export const API_ROUTES = {
   AUTH_CHECK: '/api/auth/check',
   AUTH_SET_URL: '/api/auth/set-url',
   AUTH_GET_URL: '/api/auth/url',
+  AUTH_RESET: '/api/auth/reset',
 
   // System
   SYSTEM: '/api/system',
   SYSTEM_REBOOT: '/api/system/reboot',
+  SYSTEM_REBOOT_SCHEDULE: '/api/system/reboot/schedule',
 
   // Connection
   CONNECTION: '/api/connection',
@@ -74,6 +76,12 @@ export const API_ROUTES = {
   WIFI_PLANNING: '/api/wifi/planning',
   WIFI_MAC_FILTER: '/api/wifi/mac-filter',
   WIFI_WPS: '/api/wifi/wps',
+  // WiFi v13+ features
+  WIFI_TEMP_DISABLE: '/api/wifi/temp-disable',
+  // WiFi v14+ features
+  WIFI_GUEST_CONFIG: '/api/wifi/guest/config',
+  WIFI_GUEST_KEYS: '/api/wifi/guest/keys',
+  WIFI_MLO_CONFIG: '/api/wifi/mlo/config',
 
   // LAN
   LAN_CONFIG: '/api/lan/config',
@@ -105,6 +113,7 @@ export const API_ROUTES = {
   TV_PVR_CONFIG: '/api/tv/pvr/config',
   PVR_PROGRAMMED: '/api/tv/pvr/programmed',
   PVR_FINISHED: '/api/tv/pvr/finished',
+  TV_EPG_BY_TIME: '/api/tv/epg/by_time',
 
   // Parental / Profiles
   PROFILES: '/api/parental/profiles',
@@ -114,6 +123,7 @@ export const API_ROUTES = {
 
   // Settings
   SETTINGS_DHCP: '/api/settings/dhcp',
+  DHCP_STATIC_LEASES: '/api/dhcp/static-leases',
   SETTINGS_FTP: '/api/settings/ftp',
   SETTINGS_VPN_SERVER: '/api/settings/vpn/server',
   SETTINGS_VPN_CLIENT: '/api/settings/vpn/client',
@@ -158,19 +168,32 @@ export const formatBytes = (bytes: number, decimals = 2): string => {
 };
 
 export const formatSpeed = (bytesPerSec: number): string => {
-  if (bytesPerSec === 0) return '0 B/s';
-  const k = 1024;
-  const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
-  const i = Math.floor(Math.log(bytesPerSec) / Math.log(k));
-  return parseFloat((bytesPerSec / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  // Convert bytes/s to bits/s (multiply by 8) for network speed display
+  // Network speeds are measured in bits, using Freebox format: kb/s, Mb/s, Gb/s
+  const bitsPerSec = bytesPerSec * 8;
+
+  if (bitsPerSec === 0) return '0 b/s';
+
+  // Use decimal units (1000) for network speeds, not binary (1024)
+  // Freebox uses lowercase 'k' and 'b/s' format
+  const k = 1000;
+  const sizes = ['b/s', 'kb/s', 'Mb/s', 'Gb/s'];
+  const i = Math.floor(Math.log(bitsPerSec) / Math.log(k));
+  const value = bitsPerSec / Math.pow(k, i);
+
+  // Use 1 decimal for values < 10, 0 decimals otherwise
+  const decimals = value < 10 ? 1 : 0;
+  return parseFloat(value.toFixed(decimals)) + ' ' + sizes[i];
 };
 
 export const formatBitrate = (bitsPerSec: number): string => {
-  if (bitsPerSec === 0) return '0 bps';
+  if (bitsPerSec === 0) return '0 b/s';
   const k = 1000;
-  const sizes = ['bps', 'Kbps', 'Mbps', 'Gbps'];
+  const sizes = ['b/s', 'kb/s', 'Mb/s', 'Gb/s'];
   const i = Math.floor(Math.log(bitsPerSec) / Math.log(k));
-  return parseFloat((bitsPerSec / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  const value = bitsPerSec / Math.pow(k, i);
+  const decimals = value < 10 ? 1 : 0;
+  return parseFloat(value.toFixed(decimals)) + ' ' + sizes[i];
 };
 
 export const formatDuration = (seconds: number): string => {

@@ -9,6 +9,7 @@ lerna-debug.log*
 
 node_modules
 dist
+dist-server
 dist-ssr
 *.local
 
@@ -32,3 +33,4 @@ dist-ssr
 
 # Claude Code
 .claude
+.reboot_schedule.json

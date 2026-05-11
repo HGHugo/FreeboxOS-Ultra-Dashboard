@@ -4,3 +4,4 @@ export { FilesPage } from './FilesPage';
 export { VmsPage } from './VmsPage';
 export { AnalyticsPage } from './AnalyticsPage';
 export { SettingsPage } from './SettingsPage';
+export { NetworkPage } from './NetworkPage';

@@ -103,8 +103,12 @@ router.get('/full', asyncHandler(async (_req, res) => {
   let filteredBss = bssData || [];
   const filteredDevicesByBand = { ...devicesByBand };
 
+  // NOTE: Inactive/disabled WiFi bands (e.g., 5GHz power-saving mode on Ultra)
+  // are NOT returned by the Freebox API, so we cannot display them.
+  // This is an API limitation, not a dashboard issue.
+
   if (!supports6ghz && Array.isArray(apsData) && Array.isArray(bssData)) {
-    // Filter out 6GHz APs
+    // Filter out 6GHz APs (for Pop v8, Revolution v6)
     filteredAps = apsData.filter(
       (ap: { band?: string }) => !ap.band?.toLowerCase().includes('6g')
     );
@@ -214,6 +218,74 @@ router.post('/wps/stop', asyncHandler(async (_req, res) => {
 // GET /api/wifi/wps/status - Get WPS status
 router.get('/wps/status', asyncHandler(async (_req, res) => {
   const result = await freeboxApi.getWpsStatus();
+  res.json(result);
+}));
+
+// ==================== WiFi Temporary Disable (v13.0+) ====================
+
+// GET /api/wifi/temp-disable - Get temporary disable status
+router.get('/temp-disable', asyncHandler(async (_req, res) => {
+  const result = await freeboxApi.getWifiTempDisableStatus();
+  res.json(result);
+}));
+
+// POST /api/wifi/temp-disable - Temporarily disable WiFi
+router.post('/temp-disable', asyncHandler(async (req, res) => {
+  const { duration } = req.body; // Duration in seconds
+  const result = await freeboxApi.setWifiTempDisable(duration);
+  res.json(result);
+}));
+
+// DELETE /api/wifi/temp-disable - Cancel temporary disable
+router.delete('/temp-disable', asyncHandler(async (_req, res) => {
+  const result = await freeboxApi.cancelWifiTempDisable();
+  res.json(result);
+}));
+
+// ==================== WiFi Guest Network (v14.0+) ====================
+
+// GET /api/wifi/guest/config - Get guest network config
+router.get('/guest/config', asyncHandler(async (_req, res) => {
+  const result = await freeboxApi.getWifiCustomKeyConfig();
+  res.json(result);
+}));
+
+// PUT /api/wifi/guest/config - Update guest network config
+router.put('/guest/config', asyncHandler(async (req, res) => {
+  const result = await freeboxApi.updateWifiCustomKeyConfig(req.body);
+  res.json(result);
+}));
+
+// GET /api/wifi/guest/keys - Get guest network keys
+router.get('/guest/keys', asyncHandler(async (_req, res) => {
+  const result = await freeboxApi.getWifiCustomKeys();
+  res.json(result);
+}));
+
+// POST /api/wifi/guest/keys - Create guest network key
+router.post('/guest/keys', asyncHandler(async (req, res) => {
+  const result = await freeboxApi.createWifiCustomKey(req.body);
+  res.json(result);
+}));
+
+// DELETE /api/wifi/guest/keys/:id - Delete guest network key
+router.delete('/guest/keys/:id', asyncHandler(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const result = await freeboxApi.deleteWifiCustomKey(id);
+  res.json(result);
+}));
+
+// ==================== WiFi MLO - Multi Link Operation (v14.0+ WiFi 7) ====================
+
+// GET /api/wifi/mlo/config - Get MLO config
+router.get('/mlo/config', asyncHandler(async (_req, res) => {
+  const result = await freeboxApi.getWifiMloConfig();
+  res.json(result);
+}));
+
+// PUT /api/wifi/mlo/config - Update MLO config
+router.put('/mlo/config', asyncHandler(async (req, res) => {
+  const result = await freeboxApi.updateWifiMloConfig(req.body);
   res.json(result);
 }));
 

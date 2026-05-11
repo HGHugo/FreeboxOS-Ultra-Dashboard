@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { freeboxApi } from '../services/freeboxApi.js';
 import { modelDetection } from '../services/modelDetection.js';
+import { connectionWebSocket } from '../services/connectionWebSocket.js';
+import { freeboxNativeWebSocket } from '../services/freeboxNativeWebSocket.js';
 import { asyncHandler, createError } from '../middleware/errorHandler.js';
 
 const router = Router();
@@ -42,6 +44,10 @@ router.post('/login', asyncHandler(async (_req, res) => {
   // Detect model capabilities after successful login
   const capabilities = await modelDetection.detectModel();
 
+  // Notify WebSocket services
+  connectionWebSocket.onLogin();
+  freeboxNativeWebSocket.onLogin(); // Start native Freebox WebSocket (API v8+)
+
   res.json({
     success: true,
     result: {
@@ -57,6 +63,9 @@ router.post('/logout', asyncHandler(async (_req, res) => {
   await freeboxApi.logout();
   // Clear cached capabilities on logout
   modelDetection.clearCache();
+  // Notify WebSocket services
+  connectionWebSocket.onLogout();
+  freeboxNativeWebSocket.onLogout();
   res.json({
     success: true,
     result: { message: 'Logged out' }
@@ -107,6 +116,31 @@ router.get('/url', asyncHandler(async (_req, res) => {
     success: true,
     result: {
       url: freeboxApi.getBaseUrl()
+    }
+  });
+}));
+
+// POST /api/auth/reset - Reset token (for re-registration when token is invalid)
+router.post('/reset', asyncHandler(async (_req, res) => {
+  // Logout first if logged in
+  if (freeboxApi.isLoggedIn()) {
+    await freeboxApi.logout();
+  }
+
+  // Reset the token
+  freeboxApi.resetToken();
+
+  // Clear cached capabilities
+  modelDetection.clearCache();
+
+  // Notify WebSocket services
+  connectionWebSocket.onLogout();
+  freeboxNativeWebSocket.onLogout();
+
+  res.json({
+    success: true,
+    result: {
+      message: 'Token reset successful. Please re-register the application.'
     }
   });
 }));

@@ -16,6 +16,8 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { usePhoneStore } from '../stores';
+import { useAuthStore } from '../stores/authStore';
+import { PermissionBanner } from '../components/ui/PermissionBanner';
 import type { CallEntry, Contact } from '../types/api';
 
 // Format timestamp to relative time
@@ -412,6 +414,11 @@ export const PhonePage: React.FC<PhonePageProps> = ({ onBack }) => {
     deleteContact
   } = usePhoneStore();
 
+  // Get permissions from auth store
+  const { permissions, freeboxUrl } = useAuthStore();
+  const hasCallsPermission = permissions.calls === true;
+  const hasContactsPermission = permissions.contacts === true;
+
   const [activeTab, setActiveTab] = useState<'calls' | 'contacts'>('calls');
   const [searchQuery, setSearchQuery] = useState('');
   const [callFilter, setCallFilter] = useState<'all' | 'missed' | 'incoming' | 'outgoing'>('all');
@@ -623,6 +630,11 @@ export const PhonePage: React.FC<PhonePageProps> = ({ onBack }) => {
         {/* Calls tab */}
         {!isLoading && activeTab === 'calls' && (
           <>
+            {/* Permission warning */}
+            {!hasCallsPermission && (
+              <PermissionBanner permission="calls" freeboxUrl={freeboxUrl} />
+            )}
+
             {filteredCalls.length > 0 ? (
               <div className="space-y-2">
                 {filteredCalls.map((call) => (
@@ -656,6 +668,11 @@ export const PhonePage: React.FC<PhonePageProps> = ({ onBack }) => {
         {/* Contacts tab */}
         {!isLoading && activeTab === 'contacts' && (
           <>
+            {/* Permission warning */}
+            {!hasContactsPermission && (
+              <PermissionBanner permission="contacts" freeboxUrl={freeboxUrl} />
+            )}
+
             {filteredContacts.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {filteredContacts.map((contact) => (

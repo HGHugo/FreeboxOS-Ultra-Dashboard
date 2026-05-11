@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { freeboxApi } from '../services/freeboxApi.js';
+import { rebootScheduler } from '../services/scheduler.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
+import { normalizeSystemInfo } from '../services/apiNormalizer.js';
 
 const router = Router();
 
@@ -25,13 +27,34 @@ router.get('/', asyncHandler(async (_req, res) => {
     const system = systemResult.result as Record<string, unknown>;
 
     // Add model info from api_version endpoint
-    // api_version returns: box_model_name (e.g. "Freebox v9 (r1)")
     system.box_model_name = version.box_model_name || version.box_model || null;
     system.device_name = version.device_name || null;
     system.api_version = version.api_version || null;
+
+    // Use API normalizer for automatic compatibility
+    // This handles both API v8+ format (sensors/fans arrays) and legacy format (flat fields)
+    // and ensures BOTH formats are available in the response
+    const normalized = normalizeSystemInfo(system);
+
+    // Update the result with normalized data
+    systemResult.result = normalized;
+
+    console.log('[System] Normalized data - sensors:', normalized.sensors?.length || 0, 'fans:', normalized.fans?.length || 0);
   }
 
   res.json(systemResult);
+}));
+
+// GET /api/system/reboot/schedule - Get reboot schedule
+router.get('/reboot/schedule', asyncHandler(async (_req, res) => {
+  const schedule = rebootScheduler.getSchedule();
+  res.json({ success: true, result: schedule });
+}));
+
+// POST /api/system/reboot/schedule - Update reboot schedule
+router.post('/reboot/schedule', asyncHandler(async (req, res) => {
+  const schedule = rebootScheduler.updateSchedule(req.body);
+  res.json({ success: true, result: schedule });
 }));
 
 // POST /api/system/reboot - Reboot Freebox

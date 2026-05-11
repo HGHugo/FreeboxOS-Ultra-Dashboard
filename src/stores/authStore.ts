@@ -14,6 +14,7 @@ interface AuthState {
   permissions: Permissions;
   error: string | null;
   freeboxUrl: string;
+  lastPermissionsRefresh: number;
 
   // Actions
   checkAuth: () => Promise<void>;
@@ -23,7 +24,36 @@ interface AuthState {
   logout: () => Promise<void>;
   setFreeboxUrl: (url: string) => Promise<void>;
   clearError: () => void;
+  refreshPermissions: () => Promise<void>;
+  updatePermissionFromError: (missingRight: string) => void;
+  handleSessionExpired: () => void;
+  resetToken: () => Promise<void>;
 }
+
+// Permissions refresh interval (1 minute)
+const PERMISSIONS_REFRESH_INTERVAL = 60 * 1000;
+
+// LocalStorage keys
+const STORAGE_KEY_FREEBOX_URL = 'freebox_dashboard_url';
+
+// Get saved URL from localStorage or use default
+const getSavedFreeboxUrl = (): string => {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY_FREEBOX_URL);
+    return saved || 'https://mafreebox.freebox.fr';
+  } catch {
+    return 'https://mafreebox.freebox.fr';
+  }
+};
+
+// Save URL to localStorage
+const saveFreeboxUrl = (url: string): void => {
+  try {
+    localStorage.setItem(STORAGE_KEY_FREEBOX_URL, url);
+  } catch {
+    // Silently fail if localStorage is not available
+  }
+};
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   isRegistered: false,
@@ -34,7 +64,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   registrationStatus: null,
   permissions: {},
   error: null,
-  freeboxUrl: 'https://mafreebox.freebox.fr',
+  freeboxUrl: getSavedFreeboxUrl(),
+  lastPermissionsRefresh: 0,
 
   checkAuth: async () => {
     set({ isLoading: true, error: null });
@@ -158,11 +189,117 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const response = await api.post<{ url: string }>(API_ROUTES.AUTH_SET_URL, { url });
       if (response.success) {
         set({ freeboxUrl: url });
+        // Save to localStorage for next session
+        saveFreeboxUrl(url);
       }
     } catch {
       set({ error: 'Failed to set Freebox URL' });
     }
   },
 
-  clearError: () => set({ error: null })
+  clearError: () => set({ error: null }),
+
+  // Refresh permissions from the server
+  refreshPermissions: async () => {
+    const { isLoggedIn, lastPermissionsRefresh } = get();
+
+    // Don't refresh if not logged in
+    if (!isLoggedIn) return;
+
+    // Throttle: don't refresh more than once per minute
+    const now = Date.now();
+    if (now - lastPermissionsRefresh < 60000) return;
+
+    try {
+      const response = await api.get<AuthStatus & { capabilities?: FreeboxCapabilities }>(API_ROUTES.AUTH_CHECK);
+      if (response.success && response.result) {
+        set({
+          permissions: response.result.permissions,
+          lastPermissionsRefresh: now
+        });
+        // Update capabilities if available
+        if (response.result.capabilities) {
+          useCapabilitiesStore.getState().setCapabilities(response.result.capabilities);
+        }
+      }
+    } catch {
+      // Silently fail - permissions will be refreshed on next successful request
+    }
+  },
+
+  // Update a specific permission from an error response (mark as false)
+  updatePermissionFromError: (missingRight: string) => {
+    const { permissions } = get();
+    // Only update if the permission was previously true or undefined
+    if (permissions[missingRight] !== false) {
+      set({
+        permissions: {
+          ...permissions,
+          [missingRight]: false
+        }
+      });
+      // Trigger a full refresh in background to get the latest permissions
+      get().refreshPermissions();
+    }
+  },
+
+  // Handle session expiration (auth_required error from API)
+  handleSessionExpired: () => {
+    const { isLoggedIn } = get();
+
+    // Only handle if we thought we were logged in
+    if (isLoggedIn) {
+      console.log('[Auth] Session expired, attempting re-login...');
+
+      // Mark as logged out temporarily
+      set({
+        isLoggedIn: false,
+        permissions: {},
+        error: null
+      });
+
+      // Attempt automatic re-login
+      get().login();
+    }
+  },
+
+  // Reset token (delete on server and locally) - for re-registration
+  resetToken: async () => {
+    set({ isLoading: true, error: null });
+    try {
+      await api.post(API_ROUTES.AUTH_RESET);
+      set({
+        isRegistered: false,
+        isLoggedIn: false,
+        permissions: {},
+        trackId: null,
+        registrationStatus: null,
+        isLoading: false,
+        error: null
+      });
+      // Clear capabilities
+      useCapabilitiesStore.getState().clearCapabilities();
+      console.log('[Auth] Token reset successful');
+    } catch {
+      set({ isLoading: false, error: 'Failed to reset token' });
+    }
+  }
 }));
+
+// Start periodic permissions refresh
+let permissionsRefreshInterval: ReturnType<typeof setInterval> | null = null;
+
+export const startPermissionsRefresh = () => {
+  if (permissionsRefreshInterval) return;
+
+  permissionsRefreshInterval = setInterval(() => {
+    useAuthStore.getState().refreshPermissions();
+  }, PERMISSIONS_REFRESH_INTERVAL);
+};
+
+export const stopPermissionsRefresh = () => {
+  if (permissionsRefreshInterval) {
+    clearInterval(permissionsRefreshInterval);
+    permissionsRefreshInterval = null;
+  }
+};

@@ -6,36 +6,103 @@ import { asyncHandler, createError } from '../middleware/errorHandler.js';
 const router = Router();
 
 // Mock data for VMs (fallback if real API not available)
+// Note: The Freebox API does NOT provide cpu_usage, memory_usage, disk_usage per VM
+// These stats are only available at system level via /vm/info/ (VmSystemInfo)
 const mockVms = [
   {
     id: 1,
     name: 'VM Plex',
-    os: 'DEBIAN',
+    os: 'debian',
     status: 'running',
     vcpus: 2,
-    memory: 4294967296, // 4GB
+    memory: 4096, // 4GB allocated (in MB as per API doc)
     disk_path: '/Freebox/VMs/plex.qcow2',
     disk_type: 'qcow2',
+    disk_size: 53687091200, // 50GB in bytes
     enable_screen: true,
-    cpu_usage: 10,
-    memory_usage: 1073741824, // 1GB used
-    disk_usage: 2147483648 // 2GB used
+    mac: '00:07:CB:00:00:01'
   },
   {
     id: 2,
     name: 'VM Home Assistant',
-    os: 'DEBIAN',
+    os: 'debian',
     status: 'running',
     vcpus: 2,
-    memory: 4294967296, // 4GB
+    memory: 2048, // 2GB allocated (in MB as per API doc)
     disk_path: '/Freebox/VMs/homeassistant.qcow2',
     disk_type: 'qcow2',
+    disk_size: 21474836480, // 20GB in bytes
     enable_screen: true,
-    cpu_usage: 10,
-    memory_usage: 1073741824, // 1GB used
-    disk_usage: 2147483648 // 2GB used
+    mac: '00:07:CB:00:00:02'
+  },
+  {
+    id: 3,
+    name: 'VM Ubuntu Server',
+    os: 'ubuntu',
+    status: 'stopped',
+    vcpus: 4,
+    memory: 8192, // 8GB allocated (in MB as per API doc)
+    disk_path: '/Freebox/VMs/ubuntu.qcow2',
+    disk_type: 'qcow2',
+    disk_size: 107374182400, // 100GB in bytes
+    enable_screen: true,
+    mac: '00:07:CB:00:00:03'
   }
 ];
+
+// Mock VM system info (fallback)
+const mockVmInfo = {
+  total_memory: 16384,  // 16GB total available for VMs (in MB)
+  used_memory: 8192,    // 8GB currently used (in MB)
+  total_cpus: 4,        // 4 vCPUs available
+  used_cpus: 4,         // 4 vCPUs currently allocated
+  usb_used: false,
+  usb_ports: ['usb-external-type-a', 'usb-external-type-c']
+};
+
+// GET /api/vm/info - Get VM system info (total/used memory, cpus)
+// IMPORTANT: Must be defined BEFORE /:id routes to avoid conflicts
+router.get('/info', asyncHandler(async (_req, res) => {
+  // Check if VMs are supported on this model
+  const capabilities = modelDetection.getCapabilities();
+  if (capabilities && capabilities.vmSupport === 'none') {
+    res.status(403).json({
+      success: false,
+      error: {
+        code: 'vm_not_supported',
+        message: `Les machines virtuelles ne sont pas supportées sur ${capabilities.modelName}`
+      }
+    });
+    return;
+  }
+
+  try {
+    const result = await freeboxApi.getVmInfo();
+    res.json(result);
+  } catch {
+    // Fallback to mock data if API not available
+    console.log('[VM] VmInfo API not available, using mock data');
+    res.json({
+      success: true,
+      result: mockVmInfo
+    });
+  }
+}));
+
+// GET /api/vm/distros - Get available distros
+// IMPORTANT: Must be defined BEFORE /:id routes to avoid conflicts
+router.get('/distros', asyncHandler(async (_req, res) => {
+  try {
+    const result = await freeboxApi.getVmDistros();
+    res.json(result);
+  } catch {
+    // Return empty list if not available
+    res.json({
+      success: true,
+      result: []
+    });
+  }
+}));
 
 // GET /api/vm - Get all VMs
 router.get('/', asyncHandler(async (_req, res) => {
@@ -263,20 +330,6 @@ router.delete('/:id', asyncHandler(async (req, res) => {
         code: 'vm_delete_failed',
         message: 'Impossible de supprimer la VM.'
       }
-    });
-  }
-}));
-
-// GET /api/vm/distros - Get available distros
-router.get('/distros', asyncHandler(async (_req, res) => {
-  try {
-    const result = await freeboxApi.getVmDistros();
-    res.json(result);
-  } catch {
-    // Return empty list if not available
-    res.json({
-      success: true,
-      result: []
     });
   }
 }));

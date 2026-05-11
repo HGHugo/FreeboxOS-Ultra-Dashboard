@@ -1,6 +1,8 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
-  Thermometer,
+  Cpu,
+  HardDrive,
   Fan,
   ArrowDown,
   ArrowUp,
@@ -12,7 +14,8 @@ import logoUltra from '../../icons/logo_ultra.svg';
 import { StatusBadge } from '../ui/Badge';
 import { formatSpeed, formatTemperature } from '../../utils/constants';
 import { useCapabilitiesStore } from '../../stores/capabilitiesStore';
-import type { SystemInfo, ConnectionStatus } from '../../types/api';
+import { useFavicon } from '../../hooks/useFavicon';
+import type { SystemInfo, ConnectionStatus, SystemSensor, SystemFan } from '../../types/api';
 
 // Map model to display name
 const getDisplayName = (model: string): string => {
@@ -30,30 +33,162 @@ interface HeaderProps {
   connectionStatus?: ConnectionStatus | null;
 }
 
-// Helper to get CPU temperature (works for both old and new Freebox models)
-const getCpuTemp = (info: SystemInfo | null | undefined): number | null => {
-  if (!info) return null;
-  // Try v9+ temps first (average of available CPUs)
-  if (info.temp_cpu0 != null) {
-    const temps = [info.temp_cpu0, info.temp_cpu1, info.temp_cpu2, info.temp_cpu3].filter(t => t != null) as number[];
-    if (temps.length > 0) {
-      return Math.round(temps.reduce((a, b) => a + b, 0) / temps.length);
-    }
+// Helper to get CPU sensors (sorted alphabetically by id)
+const getCpuSensors = (info: SystemInfo | null | undefined): SystemSensor[] => {
+  if (!info) return [];
+
+  // API v15+: sensors array format
+  if (info.sensors && Array.isArray(info.sensors)) {
+    return info.sensors
+      .filter(s => s.id.startsWith('temp_cpu'))
+      .sort((a, b) => a.id.localeCompare(b.id));
   }
-  // Fall back to older model temp
-  if (info.temp_cpum != null) return info.temp_cpum;
-  if (info.temp_cpub != null) return info.temp_cpub;
-  return null;
+
+  // Legacy format: build sensors array from individual fields
+  const sensors: SystemSensor[] = [];
+  if (info.temp_cpu0 != null) sensors.push({ id: 'temp_cpu0', name: 'CPU 0', value: info.temp_cpu0 });
+  if (info.temp_cpu1 != null) sensors.push({ id: 'temp_cpu1', name: 'CPU 1', value: info.temp_cpu1 });
+  if (info.temp_cpu2 != null) sensors.push({ id: 'temp_cpu2', name: 'CPU 2', value: info.temp_cpu2 });
+  if (info.temp_cpu3 != null) sensors.push({ id: 'temp_cpu3', name: 'CPU 3', value: info.temp_cpu3 });
+  if (info.temp_cpum != null) sensors.push({ id: 'temp_cpum', name: 'CPU Main', value: info.temp_cpum });
+  if (info.temp_cpub != null) sensors.push({ id: 'temp_cpub', name: 'CPU Box', value: info.temp_cpub });
+  if (info.temp_sw != null) sensors.push({ id: 'temp_sw', name: 'Switch', value: info.temp_sw });
+
+  return sensors.sort((a, b) => a.id.localeCompare(b.id));
+};
+
+// Helper to get HDD sensors (sorted alphabetically by id)
+const getHddSensors = (info: SystemInfo | null | undefined): SystemSensor[] => {
+  if (!info) return [];
+
+  // API v15+: sensors array format
+  if (info.sensors && Array.isArray(info.sensors)) {
+    return info.sensors
+      .filter(s => s.id.startsWith('temp_hdd') || s.id.includes('disk'))
+      .sort((a, b) => a.id.localeCompare(b.id));
+  }
+
+  return [];
+};
+
+// Helper to get average temperature from sensors
+const getAvgTemp = (sensors: SystemSensor[]): number | null => {
+  if (sensors.length === 0) return null;
+  const avg = sensors.reduce((sum, s) => sum + s.value, 0) / sensors.length;
+  return Math.round(avg);
+};
+
+// Helper to get all fans (API v8+)
+const getFans = (info: SystemInfo | null | undefined): SystemFan[] => {
+  if (!info) return [];
+
+  // API v8+: fans array
+  if (info.fans && Array.isArray(info.fans)) {
+    return info.fans.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  // Legacy format: single fan_rpm field
+  if (info.fan_rpm != null) {
+    return [{ id: 'fan_rpm', name: 'Ventilateur', value: info.fan_rpm }];
+  }
+
+  return [];
+};
+
+// Helper to get average fan RPM
+const getAvgFanRpm = (fans: SystemFan[]): number | null => {
+  if (fans.length === 0) return null;
+  const avg = fans.reduce((sum, f) => sum + f.value, 0) / fans.length;
+  return Math.round(avg);
+};
+
+// Generic tooltip item type
+interface TooltipItem {
+  id: string;
+  name: string;
+  value: number;
+}
+
+// Tooltip component that renders in a portal to avoid overflow issues
+const Tooltip: React.FC<{
+  show: boolean;
+  title: string;
+  items: TooltipItem[];
+  color: string;
+  unit: string;
+  parentRef: React.RefObject<HTMLDivElement | null>;
+}> = ({ show, title, items, color, unit, parentRef }) => {
+  const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
+
+  useEffect(() => {
+    if (show && parentRef.current) {
+      const rect = parentRef.current.getBoundingClientRect();
+      setPosition({
+        top: rect.bottom + 8,
+        left: rect.left
+      });
+    } else {
+      setPosition(null);
+    }
+  }, [show, parentRef]);
+
+  // Don't render until position is calculated
+  if (!show || items.length === 0 || !position) return null;
+
+  const tooltipContent = (
+    <div
+      className="fixed z-[9999] bg-[#1a1a1a] border border-gray-700 rounded-lg shadow-xl p-3 min-w-[200px] whitespace-nowrap"
+      style={{ top: position.top, left: position.left }}
+    >
+      <div className="text-xs font-semibold text-gray-400 mb-2 uppercase tracking-wide">{title}</div>
+      <div className="space-y-1.5">
+        {items.map((item) => (
+          <div key={item.id} className="flex justify-between items-center text-sm gap-4">
+            <span className="text-gray-300">{item.name}</span>
+            <span className={`${color} font-medium`}>{item.value}{unit}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  // Use portal to render tooltip at document body level
+  return createPortal(tooltipContent, document.body);
 };
 
 export const Header: React.FC<HeaderProps> = ({ systemInfo, connectionStatus }) => {
   // Get capabilities for model name (respects mock mode)
   const { getModel } = useCapabilitiesStore();
 
-  // Get CPU temperature (works for all Freebox models)
-  const cpuTemp = getCpuTemp(systemInfo);
-  const temp = cpuTemp != null ? formatTemperature(cpuTemp) : '--';
-  const fan = systemInfo?.fan_rpm != null ? `${systemInfo.fan_rpm}T/min` : '--';
+  // State for tooltips
+  const [showCpuTooltip, setShowCpuTooltip] = useState(false);
+  const [showHddTooltip, setShowHddTooltip] = useState(false);
+  const [showFanTooltip, setShowFanTooltip] = useState(false);
+
+  // Refs for tooltip positioning
+  const cpuRef = React.useRef<HTMLDivElement | null>(null);
+  const hddRef = React.useRef<HTMLDivElement | null>(null);
+  const fanRef = React.useRef<HTMLDivElement | null>(null);
+
+  // Set favicon dynamically based on Freebox model
+  // TODO: Add different logos for other models (delta, pop, revolution)
+  // invert=true to make white SVG visible on light browser tab backgrounds
+  useFavicon(logoUltra, true);
+
+  // Get CPU and HDD sensors
+  const cpuSensors = getCpuSensors(systemInfo);
+  const hddSensors = getHddSensors(systemInfo);
+  const fans = getFans(systemInfo);
+
+  // Calculate averages
+  const cpuAvgTemp = getAvgTemp(cpuSensors);
+  const hddAvgTemp = getAvgTemp(hddSensors);
+  const fanAvgRpm = getAvgFanRpm(fans);
+
+  // Format for display
+  const cpuTemp = cpuAvgTemp != null ? formatTemperature(cpuAvgTemp) : '--';
+  const hddTemp = hddAvgTemp != null ? formatTemperature(hddAvgTemp) : '--';
+  const fanDisplay = fanAvgRpm != null ? `${fanAvgRpm} T/min` : '--';
   const downloadSpeed = connectionStatus
     ? formatSpeed(connectionStatus.rate_down).replace(' ', '')
     : '--';
@@ -83,31 +218,95 @@ export const Header: React.FC<HeaderProps> = ({ systemInfo, connectionStatus }) 
         <span className="font-semibold text-gray-200 leading-none">{boxName}</span>
       </div>
 
+
+
       {/* Status badges */}
       <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-2 md:pb-0 scrollbar-hide">
-        <StatusBadge
-          icon={<Thermometer size={16} />}
-          value={temp}
+
+
+          {/* Network speeds */}
+          <div className="flex items-center gap-4 bg-[#1a1a1a] px-4 py-2 rounded-lg border border-gray-700 mx-2">
+              <div className="flex items-center gap-2">
+                  <ArrowDown size={16} className="text-blue-400" />
+                  <span className="text-sm font-medium">{downloadSpeed}</span>
+              </div>
+              <div className="w-px h-4 bg-gray-700" />
+              <div className="flex items-center gap-2">
+                  <ArrowUp size={16} className="text-green-400" />
+                  <span className="text-sm font-medium">{uploadSpeed}</span>
+              </div>
+          </div>
+
+        {/* CPU Temperature badge with tooltip */}
+        <div
+          ref={cpuRef}
+          className="cursor-pointer"
+          onMouseEnter={() => setShowCpuTooltip(true)}
+          onMouseLeave={() => setShowCpuTooltip(false)}
+        >
+          <StatusBadge
+            icon={<Cpu size={16} />}
+            value={cpuTemp}
+            color="text-emerald-400"
+          />
+        </div>
+        <Tooltip
+          show={showCpuTooltip}
+          title="Températures CPU"
+          items={cpuSensors}
           color="text-emerald-400"
-        />
-        <StatusBadge
-          icon={<Fan size={16} />}
-          value={fan}
-          color="text-emerald-400"
+          unit="°C"
+          parentRef={cpuRef}
         />
 
-        {/* Network speeds */}
-        <div className="flex items-center gap-4 bg-[#1a1a1a] px-4 py-2 rounded-lg border border-gray-700 mx-2">
-          <div className="flex items-center gap-2">
-            <ArrowDown size={16} className="text-blue-400" />
-            <span className="text-sm font-medium">{downloadSpeed}</span>
-          </div>
-          <div className="w-px h-4 bg-gray-700" />
-          <div className="flex items-center gap-2">
-            <ArrowUp size={16} className="text-green-400" />
-            <span className="text-sm font-medium">{uploadSpeed}</span>
-          </div>
+        {/* HDD Temperature badge with tooltip */}
+        {hddSensors.length > 0 && (
+          <>
+            <div
+              ref={hddRef}
+              className="cursor-pointer"
+              onMouseEnter={() => setShowHddTooltip(true)}
+              onMouseLeave={() => setShowHddTooltip(false)}
+            >
+              <StatusBadge
+                icon={<HardDrive size={16} />}
+                value={hddTemp}
+                color="text-blue-400"
+              />
+            </div>
+            <Tooltip
+              show={showHddTooltip}
+              title="Températures Disques"
+              items={hddSensors}
+              color="text-blue-400"
+              unit="°C"
+              parentRef={hddRef}
+            />
+          </>
+        )}
+
+        {/* Fan badge with tooltip */}
+        <div
+          ref={fanRef}
+          className="cursor-pointer"
+          onMouseEnter={() => setShowFanTooltip(true)}
+          onMouseLeave={() => setShowFanTooltip(false)}
+        >
+          <StatusBadge
+            icon={<Fan size={16} />}
+            value={fanDisplay}
+            color="text-orange-400"
+          />
         </div>
+        <Tooltip
+          show={showFanTooltip}
+          title="Ventilateurs"
+          items={fans}
+          color="text-orange-400"
+          unit=" T/min"
+          parentRef={fanRef}
+        />
+
 
         <StatusBadge
           icon={<Wifi size={16} />}

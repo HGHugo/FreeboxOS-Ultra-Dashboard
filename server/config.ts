@@ -33,8 +33,11 @@ export const config = {
     appVersion: process.env.FREEBOX_APP_VERSION || '1.0.0',
     deviceName: process.env.FREEBOX_DEVICE_NAME || 'Dashboard Web App',
 
-    // API version
-    apiVersion: 'v4',
+    // API version - v14 is used as default for broader compatibility
+    // v14: Supported by all current models (Ultra, Delta, Pop, Revolution, Mini 4K)
+    // v15: Latest version with pagination support for file listing
+    // Can be overridden via FREEBOX_API_VERSION env var
+    apiVersion: process.env.FREEBOX_API_VERSION || 'v14',
 
     // Timeouts
     requestTimeout: 10000,
@@ -78,6 +81,9 @@ export const API_ENDPOINTS = {
   WIFI_MAC_FILTER: '/wifi/mac_filter/',
   WIFI_PLANNING: '/wifi/planning/',
   WIFI_WPS: '/wifi/wps/',
+  WIFI_TEMP_DISABLE: '/wifi/temp_disable/',  // v13.0 - Temporarily disable WiFi
+  WIFI_CUSTOM_KEY: '/wifi/custom_key/',      // v14.0 - Guest network configuration
+  WIFI_MLO_CONFIG: '/wifi/mlo/config/',      // v14.0 - Multi Link Operation (WiFi 7)
 
   // LAN
   LAN_CONFIG: '/lan/config/',
@@ -132,6 +138,7 @@ export const API_ENDPOINTS = {
   // TV
   TV_CHANNELS: '/tv/channels/',
   TV_BOUQUETS: '/tv/bouquets/',
+  TV_EPG_BY_TIME: '/tv/epg/by_time/',
 
   // Parental Control
   PARENTAL_CONFIG: '/parental/config/',
@@ -176,6 +183,7 @@ export const API_ENDPOINTS = {
 
   // VM (may not be available on all models)
   VM: '/vm/',
+  VM_INFO: '/vm/info/',
   VM_DISTROS: '/vm/distros/',
 
   // AirMedia

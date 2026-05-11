@@ -4,7 +4,8 @@
 export type FreeboxModel = 'ultra' | 'delta' | 'pop' | 'revolution' | 'unknown';
 
 export type VmSupport = 'full' | 'limited' | 'none';
-export type TemperatureType = 'quad_core' | 'legacy';
+// @deprecated All Freebox models now use 'legacy' temperature fields (temp_cpum, temp_sw, temp_cpub)
+export type TemperatureType = 'legacy';
 export type BoxFlavor = 'full' | 'light';
 
 export interface FreeboxCapabilities {
@@ -14,8 +15,8 @@ export interface FreeboxCapabilities {
   boxFlavor: BoxFlavor;     // 'full' = internal storage, 'light' = external only
 
   // Feature flags
-  wifi6ghz: boolean;        // WiFi 6E (6GHz band) support - only Ultra has 6GHz
-  wifi7: boolean;           // WiFi 7 support - Pop and Ultra
+  wifi6ghz: boolean;        // WiFi 6E/7 (6GHz band) support - Ultra (tri-band) & Delta (WiFi 6E) have 6GHz, Pop & Revolution do NOT
+  wifi7: boolean;           // WiFi 7 support - Ultra (tri-band) & Pop (bi-band 2.4+5GHz only)
   vmSupport: VmSupport;     // VM support level
   maxVms: number;           // Maximum number of VMs
   maxVmRam: number;         // Maximum VM RAM in GB
@@ -60,8 +61,8 @@ export const MODEL_CAPABILITIES: Record<FreeboxModel, ModelBaseCapabilities> = {
     vmSupport: 'full',
     maxVms: 10,
     maxVmRam: 16,
-    temperatureType: 'quad_core',
-    temperatureFields: ['temp_cpu0', 'temp_cpu1', 'temp_cpu2', 'temp_cpu3'],
+    temperatureType: 'legacy', // All Freebox models use the same temp fields
+    temperatureFields: ['temp_cpum', 'temp_sw', 'temp_cpub'],
     hasInternalStorage: false, // NVMe slot available, no disk by default (detected via box_flavor)
     maxEthernetSpeed: 10000,  // 10G SFP LAN + 4x 2.5G Ethernet
     maxDownloadSpeed: 8000,   // 8 Gbps symmetric (10G-EPON)
@@ -134,34 +135,40 @@ export function detectModelFromName(modelName: string): FreeboxModel {
   const lower = modelName.toLowerCase();
 
   // Check for specific model identifiers
-  // Order matters: check Pop BEFORE Delta since Pop hardware identifier may contain v8/fbxgw8
+  // CORRECT MAPPING: Ultra=v9, Pop=v8, Delta=v7, Revolution/Mini4K=v6
 
   // Ultra / v9
   if (lower.includes('v9') || lower.includes('ultra')) {
+    console.log('[ModelDetection] Detected Ultra (v9)');
     return 'ultra';
   }
 
-  // Pop - MUST be checked before Delta
-  // Pop identifiers: "pop", "fbxgw8-pop", "Freebox Pop", etc.
-  if (lower.includes('pop')) {
+  // Pop / v8 - MUST be checked before Delta
+  // Pop identifiers: "pop", "v8", "Freebox Pop", "Freebox v8", etc.
+  if (lower.includes('pop') || lower.includes('v8')) {
+    console.log('[ModelDetection] Detected Pop (v8)');
     return 'pop';
   }
 
-  // Delta / v8 (after Pop check to avoid misdetection)
-  if (lower.includes('v8') || lower.includes('delta') || lower.includes('fbxgw8')) {
+  // Delta / v7
+  if (lower.includes('v7') || lower.includes('delta')) {
+    console.log('[ModelDetection] Detected Delta (v7)');
     return 'delta';
   }
 
   // Revolution / v6
   if (lower.includes('v6') || lower.includes('revolution') || lower.includes('révolution') || lower.includes('fbxgw1')) {
+    console.log('[ModelDetection] Detected Revolution (v6)');
     return 'revolution';
   }
 
-  // Mini 4K / v7 - treat as limited like revolution
-  if (lower.includes('v7') || lower.includes('mini') || lower.includes('fbxgw7')) {
+  // Mini 4K / v6 - same as Revolution
+  if (lower.includes('mini') || lower.includes('fbxgw7')) {
+    console.log('[ModelDetection] Detected Mini 4K (v6)');
     return 'revolution';
   }
 
+  console.log('[ModelDetection] Unknown model:', modelName);
   return 'unknown';
 }
 

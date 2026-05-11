@@ -4,6 +4,24 @@ import { API_ROUTES } from '../utils/constants';
 import type { WifiConfig, WifiAp, WifiBss } from '../types/api';
 import type { WifiNetwork } from '../types';
 
+// WiFi Temporary Disable status (v13.0+)
+export interface WifiTempDisableStatus {
+  enabled: boolean;
+  remaining_time?: number; // Seconds remaining
+}
+
+// WiFi Guest Network config (v14.0+)
+export interface WifiGuestConfig {
+  enabled: boolean;
+  ssid?: string;
+  key?: string;
+}
+
+// WiFi MLO Config (v14.0+ - WiFi 7)
+export interface WifiMloConfig {
+  enabled: boolean;
+}
+
 interface WifiState {
   config: WifiConfig | null;
   networks: WifiNetwork[];
@@ -11,10 +29,30 @@ interface WifiState {
   isLoading: boolean;
   error: string | null;
 
+  // v13+ Temporary Disable
+  tempDisableStatus: WifiTempDisableStatus | null;
+
+  // v14+ Guest Network
+  guestConfig: WifiGuestConfig | null;
+
+  // v14+ MLO (WiFi 7)
+  mloConfig: WifiMloConfig | null;
+
   // Actions
   fetchWifiStatus: () => Promise<void>;
   toggleWifi: (enabled: boolean) => Promise<void>;
   toggleBss: (bssId: string, enabled: boolean) => Promise<void>;
+
+  // v13+ Actions
+  fetchTempDisableStatus: () => Promise<void>;
+  setTempDisable: (durationSeconds: number) => Promise<boolean>;
+  cancelTempDisable: () => Promise<boolean>;
+
+  // v14+ Actions
+  fetchGuestConfig: () => Promise<void>;
+  updateGuestConfig: (config: Partial<WifiGuestConfig>) => Promise<boolean>;
+  fetchMloConfig: () => Promise<void>;
+  updateMloConfig: (config: Partial<WifiMloConfig>) => Promise<boolean>;
 }
 
 // Helper to map band string to display format
@@ -39,6 +77,9 @@ export const useWifiStore = create<WifiState>((set, get) => ({
   totalDevices: 0,
   isLoading: false,
   error: null,
+  tempDisableStatus: null,
+  guestConfig: null,
+  mloConfig: null,
 
   fetchWifiStatus: async () => {
     // Only show loading on first fetch to avoid flickering
@@ -200,6 +241,109 @@ export const useWifiStore = create<WifiState>((set, get) => ({
       }
     } catch {
       set({ error: 'Failed to toggle BSS' });
+    }
+  },
+
+  // ==================== v13+ Temporary Disable ====================
+
+  fetchTempDisableStatus: async () => {
+    try {
+      const response = await api.get<WifiTempDisableStatus>(API_ROUTES.WIFI_TEMP_DISABLE);
+      if (response.success && response.result) {
+        set({ tempDisableStatus: response.result });
+      }
+    } catch {
+      // v13+ feature - may not be available on older models
+    }
+  },
+
+  setTempDisable: async (durationSeconds: number) => {
+    try {
+      const response = await api.post<WifiTempDisableStatus>(API_ROUTES.WIFI_TEMP_DISABLE, { duration: durationSeconds });
+      if (response.success) {
+        set({ tempDisableStatus: { enabled: true, remaining_time: durationSeconds } });
+        // Refresh WiFi status
+        get().fetchWifiStatus();
+        return true;
+      }
+      set({ error: response.error?.message || 'Échec de la désactivation temporaire' });
+      return false;
+    } catch {
+      set({ error: 'Échec de la désactivation temporaire' });
+      return false;
+    }
+  },
+
+  cancelTempDisable: async () => {
+    try {
+      const response = await api.delete(API_ROUTES.WIFI_TEMP_DISABLE);
+      if (response.success) {
+        set({ tempDisableStatus: { enabled: false } });
+        // Refresh WiFi status
+        get().fetchWifiStatus();
+        return true;
+      }
+      set({ error: response.error?.message || 'Échec de l\'annulation' });
+      return false;
+    } catch {
+      set({ error: 'Échec de l\'annulation' });
+      return false;
+    }
+  },
+
+  // ==================== v14+ Guest Network ====================
+
+  fetchGuestConfig: async () => {
+    try {
+      const response = await api.get<WifiGuestConfig>(API_ROUTES.WIFI_GUEST_CONFIG);
+      if (response.success && response.result) {
+        set({ guestConfig: response.result });
+      }
+    } catch {
+      // v14+ feature - may not be available on older models
+    }
+  },
+
+  updateGuestConfig: async (config: Partial<WifiGuestConfig>) => {
+    try {
+      const response = await api.put<WifiGuestConfig>(API_ROUTES.WIFI_GUEST_CONFIG, config);
+      if (response.success && response.result) {
+        set({ guestConfig: response.result });
+        return true;
+      }
+      set({ error: response.error?.message || 'Échec de la mise à jour' });
+      return false;
+    } catch {
+      set({ error: 'Échec de la mise à jour du réseau invité' });
+      return false;
+    }
+  },
+
+  // ==================== v14+ MLO (WiFi 7) ====================
+
+  fetchMloConfig: async () => {
+    try {
+      const response = await api.get<WifiMloConfig>(API_ROUTES.WIFI_MLO_CONFIG);
+      if (response.success && response.result) {
+        set({ mloConfig: response.result });
+      }
+    } catch {
+      // v14+ feature - may not be available on older models
+    }
+  },
+
+  updateMloConfig: async (config: Partial<WifiMloConfig>) => {
+    try {
+      const response = await api.put<WifiMloConfig>(API_ROUTES.WIFI_MLO_CONFIG, config);
+      if (response.success && response.result) {
+        set({ mloConfig: response.result });
+        return true;
+      }
+      set({ error: response.error?.message || 'Échec de la mise à jour MLO' });
+      return false;
+    } catch {
+      set({ error: 'Échec de la mise à jour MLO' });
+      return false;
     }
   }
 }));

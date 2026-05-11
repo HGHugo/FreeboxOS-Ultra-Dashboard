@@ -18,14 +18,23 @@ import {
   Clock,
   Users,
   Share2,
-  ExternalLink
+  ExternalLink,
+  Plus,
+  Trash2,
+  Edit2,
+  Calendar,
+  Lightbulb
 } from 'lucide-react';
 import { api } from '../api/client';
 import { API_ROUTES } from '../utils/constants';
 import { ParentalControlModal } from '../components/modals/ParentalControlModal';
 import { PortForwardingModal } from '../components/modals/PortForwardingModal';
 import { VpnModal } from '../components/modals/VpnModal';
+import { RebootScheduleModal } from '../components/modals/RebootScheduleModal';
 import { useLanStore } from '../stores/lanStore';
+import { useAuthStore } from '../stores/authStore';
+import { useSystemStore } from '../stores/systemStore';
+import { getPermissionErrorMessage, getPermissionShortError, getFreeboxSettingsUrl } from '../utils/permissions';
 
 interface SettingsPageProps {
   onBack: () => void;
@@ -74,13 +83,36 @@ const Section: React.FC<{
   title: string;
   icon: React.ElementType;
   children: React.ReactNode;
-}> = ({ title, icon: Icon, children }) => (
-  <div className="bg-[#121212] rounded-xl border border-gray-800 overflow-hidden">
+  permissionError?: string | null;
+  freeboxSettingsUrl?: string | null;
+}> = ({ title, icon: Icon, children, permissionError, freeboxSettingsUrl }) => (
+  <div className={`bg-[#121212] rounded-xl border border-gray-800 overflow-hidden ${permissionError ? 'opacity-60' : ''}`}>
     <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-800 bg-[#0f0f0f]">
       <Icon size={18} className="text-gray-400" />
       <h3 className="font-medium text-white">{title}</h3>
     </div>
-    <div className="px-4">{children}</div>
+    {permissionError && (
+      <div className="px-4 py-3 bg-amber-900/20 border-b border-amber-700/30">
+        <p className="text-amber-400 text-xs">
+          {permissionError}
+          {freeboxSettingsUrl && (
+            <>
+              {' '}
+              <a
+                href={freeboxSettingsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-amber-300 hover:text-amber-200 underline"
+              >
+                Ouvrir les paramètres Freebox
+                <ExternalLink size={12} />
+              </a>
+            </>
+          )}
+        </p>
+      </div>
+    )}
+    <div className={`px-4 ${permissionError ? 'pointer-events-none' : ''}`}>{children}</div>
   </div>
 );
 
@@ -94,9 +126,19 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
   const [showParentalModal, setShowParentalModal] = useState(false);
   const [showFirewallModal, setShowFirewallModal] = useState(false);
   const [showVpnModal, setShowVpnModal] = useState(false);
+  const [showRebootScheduleModal, setShowRebootScheduleModal] = useState(false);
 
   // Get devices from LAN store for parental control
   const { devices } = useLanStore();
+  const { reboot } = useSystemStore();
+
+  // Get permissions and freebox URL from auth store
+  const { permissions, freeboxUrl } = useAuthStore();
+
+  // Helper to check if a permission is granted (defaults to false if not present)
+  const hasPermission = (permission: keyof typeof permissions): boolean => {
+    return permissions[permission] === true;
+  };
 
   // Connection settings
   const [connectionConfig, setConnectionConfig] = useState<{
@@ -107,6 +149,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
     adblock: boolean;
   } | null>(null);
 
+  // Original config for diff comparison
+  const [originalConnectionConfig, setOriginalConnectionConfig] = useState<typeof connectionConfig>(null);
+
   // DHCP settings
   const [dhcpConfig, setDhcpConfig] = useState<{
     enabled: boolean;
@@ -114,7 +159,25 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
     ip_range_end: string;
     netmask: string;
     gateway: string;
-    dns: string;
+    dns: string[];  // Array of DNS servers
+    sticky_assign: boolean;
+    always_broadcast: boolean;
+  } | null>(null);
+
+  // DHCP static leases
+  const [staticLeases, setStaticLeases] = useState<Array<{
+    id: string;
+    mac: string;
+    ip: string;
+    comment: string;
+    hostname?: string;
+  }>>([]);
+  const [showLeaseModal, setShowLeaseModal] = useState(false);
+  const [editingLease, setEditingLease] = useState<{
+    id?: string;
+    mac: string;
+    ip: string;
+    comment: string;
   } | null>(null);
 
   // FTP settings
@@ -125,11 +188,18 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
     port_ctrl: number;
   } | null>(null);
 
-  // LCD settings
+  // LCD settings (includes LED strip for Ultra 25 ans edition)
   const [lcdConfig, setLcdConfig] = useState<{
     brightness: number;
     orientation: number;
     orientation_forced: boolean;
+    hide_wifi_key?: boolean;
+    hide_status_led?: boolean;
+    // LED Strip (Ultra 25 ans edition only)
+    led_strip_enabled?: boolean;
+    led_strip_brightness?: number;
+    led_strip_animation?: string;
+    available_led_strip_animations?: string[];
   } | null>(null);
 
   // WiFi planning
@@ -180,6 +250,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
           const response = await api.get<typeof connectionConfig>(API_ROUTES.CONNECTION_CONFIG);
           if (response.success && response.result) {
             setConnectionConfig(response.result);
+            setOriginalConnectionConfig(response.result);
           }
           break;
         }
@@ -187,6 +258,11 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
           const response = await api.get<typeof dhcpConfig>(API_ROUTES.SETTINGS_DHCP);
           if (response.success && response.result) {
             setDhcpConfig(response.result);
+          }
+          // Fetch static leases
+          const leasesResponse = await api.get<typeof staticLeases>(API_ROUTES.DHCP_STATIC_LEASES);
+          if (leasesResponse.success && leasesResponse.result) {
+            setStaticLeases(Array.isArray(leasesResponse.result) ? leasesResponse.result : []);
           }
           break;
         }
@@ -267,12 +343,29 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
   };
 
   const saveConnectionConfig = async () => {
-    if (!connectionConfig) return;
+    if (!connectionConfig || !originalConnectionConfig) return;
+
+    // Build payload with only modified fields
+    const changedFields: Partial<typeof connectionConfig> = {};
+    for (const key of Object.keys(connectionConfig) as Array<keyof typeof connectionConfig>) {
+      if (connectionConfig[key] !== originalConnectionConfig[key]) {
+        changedFields[key] = connectionConfig[key] as never;
+      }
+    }
+
+    // If nothing changed, don't send request
+    if (Object.keys(changedFields).length === 0) {
+      showSuccess('Aucune modification à enregistrer');
+      return;
+    }
+
     setIsLoading(true);
     try {
-      const response = await api.put(API_ROUTES.CONNECTION_CONFIG, connectionConfig);
+      const response = await api.put(API_ROUTES.CONNECTION_CONFIG, changedFields);
       if (response.success) {
         showSuccess('Paramètres réseau enregistrés');
+        // Update original config to reflect saved state
+        setOriginalConnectionConfig({ ...connectionConfig });
       } else {
         setError(response.error?.message || 'Erreur lors de la sauvegarde');
       }
@@ -295,6 +388,73 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
       }
     } catch {
       setError('Erreur lors de la sauvegarde');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // DHCP Static Leases management
+  const addStaticLease = () => {
+    setEditingLease({ mac: '', ip: '', comment: '' });
+    setShowLeaseModal(true);
+  };
+
+  const editStaticLease = (lease: typeof staticLeases[0]) => {
+    setEditingLease({ id: lease.id, mac: lease.mac, ip: lease.ip, comment: lease.comment });
+    setShowLeaseModal(true);
+  };
+
+  const saveStaticLease = async () => {
+    if (!editingLease) return;
+    setIsLoading(true);
+    try {
+      let response;
+      if (editingLease.id) {
+        // Update existing lease
+        response = await api.put(`${API_ROUTES.DHCP_STATIC_LEASES}/${editingLease.id}`, {
+          mac: editingLease.mac,
+          ip: editingLease.ip,
+          comment: editingLease.comment
+        });
+      } else {
+        // Create new lease
+        response = await api.post(API_ROUTES.DHCP_STATIC_LEASES, {
+          mac: editingLease.mac,
+          ip: editingLease.ip,
+          comment: editingLease.comment
+        });
+      }
+
+      if (response.success) {
+        showSuccess(editingLease.id ? 'Bail statique modifié' : 'Bail statique ajouté');
+        setShowLeaseModal(false);
+        setEditingLease(null);
+        // Refresh leases
+        fetchSettings();
+      } else {
+        setError(response.error?.message || 'Erreur lors de la sauvegarde');
+      }
+    } catch {
+      setError('Erreur lors de la sauvegarde');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const deleteStaticLease = async (id: string) => {
+    if (!confirm('Voulez-vous vraiment supprimer ce bail statique ?')) return;
+    setIsLoading(true);
+    try {
+      const response = await api.delete(`${API_ROUTES.DHCP_STATIC_LEASES}/${id}`);
+      if (response.success) {
+        showSuccess('Bail statique supprimé');
+        // Refresh leases
+        fetchSettings();
+      } else {
+        setError(response.error?.message || 'Erreur lors de la suppression');
+      }
+    } catch {
+      setError('Erreur lors de la suppression');
     } finally {
       setIsLoading(false);
     }
@@ -348,6 +508,20 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
       setError('Erreur lors de la sauvegarde');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleReboot = async () => {
+    if (confirm('Êtes-vous sûr de vouloir redémarrer la Freebox ?')) {
+      setIsLoading(true);
+      const success = await reboot();
+      setIsLoading(false);
+      
+      if (success) {
+        showSuccess('Redémarrage en cours...');
+      } else {
+        setError('Échec du redémarrage');
+      }
     }
   };
 
@@ -443,7 +617,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
         {/* Network settings */}
         {!isLoading && activeTab === 'network' && connectionConfig && (
           <div className="space-y-6">
-            <Section title="Accès distant" icon={Globe}>
+            <Section title="Accès distant" icon={Globe} permissionError={!hasPermission('settings') ? getPermissionErrorMessage('settings') : null} freeboxSettingsUrl={!hasPermission('settings') ? getFreeboxSettingsUrl(freeboxUrl) : null}>
               <SettingRow
                 label="Accès distant"
                 description="Permet l'accès à la Freebox depuis Internet"
@@ -455,7 +629,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
               </SettingRow>
               <SettingRow
                 label="Port d'accès distant"
-                description="Port HTTPS pour l'accès distant"
+                description="Port HTTP pour l'accès distant à la Freebox"
               >
                 <input
                   type="number"
@@ -466,7 +640,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
               </SettingRow>
             </Section>
 
-            <Section title="Options réseau" icon={Network}>
+            <Section title="Options réseau" icon={Network} permissionError={!hasPermission('settings') ? getPermissionErrorMessage('settings') : null} freeboxSettingsUrl={!hasPermission('settings') ? getFreeboxSettingsUrl(freeboxUrl) : null}>
               <SettingRow
                 label="Réponse au ping"
                 description="Répond aux requêtes ping depuis Internet"
@@ -498,7 +672,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
 
             <button
               onClick={saveConnectionConfig}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
+              disabled={!hasPermission('settings')}
+              className={`flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors ${!hasPermission('settings') ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               <Save size={16} />
               Enregistrer
@@ -509,7 +684,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
         {/* WiFi settings */}
         {!isLoading && activeTab === 'wifi' && (
           <div className="space-y-6">
-            <Section title="Planification WiFi" icon={Clock}>
+            <Section title="Planification WiFi" icon={Clock} permissionError={!hasPermission('settings') ? getPermissionErrorMessage('settings') : null} freeboxSettingsUrl={!hasPermission('settings') ? getFreeboxSettingsUrl(freeboxUrl) : null}>
               <SettingRow
                 label="Planification active"
                 description="Active les horaires d'extinction automatique du WiFi"
@@ -525,7 +700,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
               </div>
             </Section>
 
-            <Section title="Filtrage MAC" icon={Shield}>
+            <Section title="Filtrage MAC" icon={Shield} permissionError={!hasPermission('settings') ? getPermissionErrorMessage('settings') : null} freeboxSettingsUrl={!hasPermission('settings') ? getFreeboxSettingsUrl(freeboxUrl) : null}>
               <div className="py-4 text-sm text-gray-500">
                 <p>Le filtrage MAC permet de restreindre l'accès au WiFi à des appareils spécifiques.</p>
                 <p className="mt-2">Mode liste blanche : seuls les appareils autorisés peuvent se connecter.</p>
@@ -536,7 +711,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
             {wifiPlanning && (
               <button
                 onClick={saveWifiPlanning}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
+                disabled={!hasPermission('settings')}
+                className={`flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors ${!hasPermission('settings') ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 <Save size={16} />
                 Enregistrer
@@ -548,7 +724,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
         {/* DHCP settings */}
         {!isLoading && activeTab === 'dhcp' && dhcpConfig && (
           <div className="space-y-6">
-            <Section title="Serveur DHCP" icon={Network}>
+            <Section title="Serveur DHCP" icon={Network} permissionError={!hasPermission('settings') ? getPermissionErrorMessage('settings') : null} freeboxSettingsUrl={!hasPermission('settings') ? getFreeboxSettingsUrl(freeboxUrl) : null}>
               <SettingRow
                 label="DHCP activé"
                 description="Attribution automatique des adresses IP"
@@ -574,22 +750,140 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
                   className="w-40 px-3 py-1.5 bg-[#1a1a1a] border border-gray-700 rounded-lg text-white text-sm font-mono focus:outline-none focus:border-blue-500"
                 />
               </SettingRow>
+              <SettingRow
+                label="Serveurs DNS"
+                description="Serveurs DNS distribués aux clients DHCP"
+              >
+                <div className="flex flex-col gap-2">
+                  {(dhcpConfig.dns || []).map((dns, index) => (
+                    <div key={index} className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={dns}
+                        onChange={(e) => {
+                          const newDns = [...(dhcpConfig.dns || [])];
+                          newDns[index] = e.target.value;
+                          setDhcpConfig({ ...dhcpConfig, dns: newDns });
+                        }}
+                        placeholder="192.168.1.254"
+                        className="w-40 px-3 py-1.5 bg-[#1a1a1a] border border-gray-700 rounded-lg text-white text-sm font-mono focus:outline-none focus:border-blue-500"
+                      />
+                      <button
+                        onClick={() => {
+                          const newDns = (dhcpConfig.dns || []).filter((_, i) => i !== index);
+                          setDhcpConfig({ ...dhcpConfig, dns: newDns });
+                        }}
+                        className="p-1.5 hover:bg-gray-800 rounded text-red-400 hover:text-red-300 transition-colors"
+                        title="Supprimer"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                  {(dhcpConfig.dns || []).length < 3 && (
+                    <button
+                      onClick={() => {
+                        const newDns = [...(dhcpConfig.dns || []), ''];
+                        setDhcpConfig({ ...dhcpConfig, dns: newDns });
+                      }}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-[#1a1a1a] hover:bg-[#252525] border border-gray-700 rounded-lg text-gray-400 hover:text-white text-sm transition-colors w-fit"
+                    >
+                      <Plus size={14} />
+                      Ajouter DNS
+                    </button>
+                  )}
+                </div>
+              </SettingRow>
+              <SettingRow
+                label="Attribution persistante"
+                description="Conserver l'attribution IP entre les redémarrages"
+              >
+                <Toggle
+                  enabled={dhcpConfig.sticky_assign}
+                  onChange={(v) => setDhcpConfig({ ...dhcpConfig, sticky_assign: v })}
+                />
+              </SettingRow>
             </Section>
 
             <button
               onClick={saveDhcpConfig}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
+              disabled={!hasPermission('settings')}
+              className={`flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors ${!hasPermission('settings') ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               <Save size={16} />
               Enregistrer
             </button>
+
+            {/* Static Leases Section */}
+            <Section title="Baux DHCP statiques" icon={Network} permissionError={!hasPermission('settings') ? getPermissionErrorMessage('settings') : null} freeboxSettingsUrl={!hasPermission('settings') ? getFreeboxSettingsUrl(freeboxUrl) : null}>
+              <div className="flex items-center justify-between py-3">
+                <span className="text-xs text-gray-500">({staticLeases.length} bail{staticLeases.length !== 1 ? 'x' : ''})</span>
+                <button
+                  onClick={addStaticLease}
+                  disabled={!hasPermission('settings')}
+                  className={`flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg transition-colors ${!hasPermission('settings') ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  <Plus size={14} />
+                  Ajouter
+                </button>
+              </div>
+              <div className="overflow-x-auto">
+                {staticLeases.length > 0 ? (
+                  <table className="w-full">
+                    <thead className="bg-[#0a0a0a] border-b border-gray-800">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Adresse MAC</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">IP</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Commentaire</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Hostname</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-800">
+                      {staticLeases.map((lease) => (
+                        <tr key={lease.id} className="hover:bg-[#0a0a0a] transition-colors">
+                          <td className="px-4 py-3 text-sm font-mono text-white">{lease.mac}</td>
+                          <td className="px-4 py-3 text-sm font-mono text-white">{lease.ip}</td>
+                          <td className="px-4 py-3 text-sm text-gray-300">{lease.comment || '-'}</td>
+                          <td className="px-4 py-3 text-sm text-gray-400">{lease.hostname || '-'}</td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => editStaticLease(lease)}
+                                className="p-1.5 hover:bg-gray-800 rounded text-blue-400 hover:text-blue-300 transition-colors"
+                                title="Modifier"
+                              >
+                                <Edit2 size={14} />
+                              </button>
+                              <button
+                                onClick={() => deleteStaticLease(lease.id)}
+                                className="p-1.5 hover:bg-gray-800 rounded text-red-400 hover:text-red-300 transition-colors"
+                                title="Supprimer"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <div className="py-8 text-center text-gray-500">
+                    <Network size={32} className="mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">Aucun bail statique configuré</p>
+                    <p className="text-xs mt-1">Cliquez sur "Ajouter" pour en créer un</p>
+                  </div>
+                )}
+              </div>
+            </Section>
           </div>
         )}
 
         {/* Storage (FTP) settings */}
         {!isLoading && activeTab === 'storage' && ftpConfig && (
           <div className="space-y-6">
-            <Section title="Serveur FTP" icon={Share2}>
+            <Section title="Serveur FTP" icon={Share2} permissionError={!hasPermission('settings') ? getPermissionErrorMessage('settings') : null} freeboxSettingsUrl={!hasPermission('settings') ? getFreeboxSettingsUrl(freeboxUrl) : null}>
               <SettingRow
                 label="FTP activé"
                 description="Permet l'accès aux fichiers via FTP"
@@ -629,7 +923,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
 
             <button
               onClick={saveFtpConfig}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
+              disabled={!hasPermission('settings')}
+              className={`flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors ${!hasPermission('settings') ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               <Save size={16} />
               Enregistrer
@@ -640,14 +935,15 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
         {/* Security settings */}
         {!isLoading && activeTab === 'security' && (
           <div className="space-y-6">
-            <Section title="Contrôle parental" icon={Users}>
+            <Section title="Contrôle parental" icon={Users} permissionError={!hasPermission('parental') ? getPermissionErrorMessage('parental') : null} freeboxSettingsUrl={!hasPermission('parental') ? getFreeboxSettingsUrl(freeboxUrl) : null}>
               <SettingRow
                 label="Règles de filtrage"
                 description="Règles de contrôle parental pour limiter l'accès Internet"
               >
                 <button
                   onClick={() => setShowParentalModal(true)}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-sm rounded-lg transition-colors"
+                  disabled={!hasPermission('parental')}
+                  className={`flex items-center gap-2 px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-sm rounded-lg transition-colors ${!hasPermission('parental') ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   <ExternalLink size={14} />
                   Gérer
@@ -671,7 +967,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
               )}
             </Section>
 
-            <Section title="Pare-feu - Redirection de ports" icon={Shield}>
+            <Section title="Pare-feu - Redirection de ports" icon={Shield} permissionError={!hasPermission('settings') ? getPermissionErrorMessage('settings') : null} freeboxSettingsUrl={!hasPermission('settings') ? getFreeboxSettingsUrl(freeboxUrl) : null}>
               <SettingRow
                 label="Règles actives"
                 description="Redirections de ports configurées sur la Freebox"
@@ -682,7 +978,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
                   </span>
                   <button
                     onClick={() => setShowFirewallModal(true)}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-orange-600 hover:bg-orange-500 text-white text-sm rounded-lg transition-colors"
+                    disabled={!hasPermission('settings')}
+                    className={`flex items-center gap-2 px-3 py-1.5 bg-orange-600 hover:bg-orange-500 text-white text-sm rounded-lg transition-colors ${!hasPermission('settings') ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     <ExternalLink size={14} />
                     Gérer
@@ -719,7 +1016,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
               )}
             </Section>
 
-            <Section title="Serveur VPN" icon={Lock}>
+            <Section title="Serveur VPN" icon={Lock} permissionError={!hasPermission('settings') ? getPermissionErrorMessage('settings') : null} freeboxSettingsUrl={!hasPermission('settings') ? getFreeboxSettingsUrl(freeboxUrl) : null}>
               <SettingRow
                 label="Serveur VPN"
                 description="Permet de se connecter au réseau local depuis l'extérieur"
@@ -734,7 +1031,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
                   </span>
                   <button
                     onClick={() => setShowVpnModal(true)}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg transition-colors"
+                    disabled={!hasPermission('settings')}
+                    className={`flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg transition-colors ${!hasPermission('settings') ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     <ExternalLink size={14} />
                     Gérer
@@ -776,7 +1074,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
         {/* System settings */}
         {!isLoading && activeTab === 'system' && lcdConfig && (
           <div className="space-y-6">
-            <Section title="Écran LCD" icon={Monitor}>
+            <Section title="Écran LCD" icon={Monitor} permissionError={!hasPermission('settings') ? getPermissionErrorMessage('settings') : null} freeboxSettingsUrl={!hasPermission('settings') ? getFreeboxSettingsUrl(freeboxUrl) : null}>
               <SettingRow label="Luminosité">
                 <div className="flex items-center gap-3">
                   <input
@@ -813,13 +1111,67 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
               </SettingRow>
             </Section>
 
-            <Section title="Actions système" icon={Power}>
+            {/* LED Strip section - Only shown for Ultra 25 ans edition */}
+            {lcdConfig.led_strip_enabled !== undefined && (
+              <Section title="Bandeau LED" icon={Lightbulb} permissionError={!hasPermission('settings') ? getPermissionErrorMessage('settings') : null} freeboxSettingsUrl={!hasPermission('settings') ? getFreeboxSettingsUrl(freeboxUrl) : null}>
+                <SettingRow
+                  label="Bandeau LED activé"
+                  description="Active ou désactive le bandeau LED"
+                >
+                  <Toggle
+                    enabled={lcdConfig.led_strip_enabled ?? false}
+                    onChange={(v) => setLcdConfig({ ...lcdConfig, led_strip_enabled: v })}
+                  />
+                </SettingRow>
+                {lcdConfig.led_strip_enabled && (
+                  <>
+                    <SettingRow label="Luminosité LED">
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={lcdConfig.led_strip_brightness ?? 50}
+                          onChange={(e) => setLcdConfig({ ...lcdConfig, led_strip_brightness: parseInt(e.target.value) })}
+                          className="w-32"
+                        />
+                        <span className="text-sm text-gray-400 w-12">{lcdConfig.led_strip_brightness ?? 50}%</span>
+                      </div>
+                    </SettingRow>
+                    <SettingRow label="Animation">
+                      <select
+                        value={lcdConfig.led_strip_animation ?? 'breathing'}
+                        onChange={(e) => setLcdConfig({ ...lcdConfig, led_strip_animation: e.target.value })}
+                        className="px-3 py-1.5 bg-[#1a1a1a] border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500"
+                      >
+                        {(lcdConfig.available_led_strip_animations || ['organic', 'static', 'breathing', 'rain', 'trail', 'wave']).map((anim) => (
+                          <option key={anim} value={anim}>
+                            {anim.charAt(0).toUpperCase() + anim.slice(1)}
+                          </option>
+                        ))}
+                      </select>
+                    </SettingRow>
+                  </>
+                )}
+              </Section>
+            )}
+
+            <Section title="Actions système" icon={Power} permissionError={!hasPermission('settings') ? getPermissionErrorMessage('settings') : null} freeboxSettingsUrl={!hasPermission('settings') ? getFreeboxSettingsUrl(freeboxUrl) : null}>
               <div className="py-4 space-y-3">
                 <button
-                  className="w-full flex items-center justify-between px-4 py-3 bg-[#1a1a1a] hover:bg-[#252525] border border-gray-700 rounded-lg transition-colors"
+                  onClick={handleReboot}
+                  disabled={!hasPermission('settings')}
+                  className={`w-full flex items-center justify-between px-4 py-3 bg-[#1a1a1a] hover:bg-[#252525] border border-gray-700 rounded-lg transition-colors ${!hasPermission('settings') ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   <span className="text-sm text-white">Redémarrer la Freebox</span>
                   <Power size={16} className="text-orange-400" />
+                </button>
+                <button
+                  onClick={() => setShowRebootScheduleModal(true)}
+                  className="w-full flex items-center justify-between px-4 py-3 bg-[#1a1a1a] hover:bg-[#252525] border border-gray-700 rounded-lg transition-colors"
+                >
+                  <span className="text-sm text-white">Programmer le redémarrage</span>
+                  <Calendar size={16} className="text-blue-400" />
                 </button>
                 <p className="text-xs text-gray-600 px-1">
                   Le redémarrage prend environ 2-3 minutes. Toutes les connexions seront interrompues.
@@ -829,7 +1181,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
 
             <button
               onClick={saveLcdConfig}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
+              disabled={!hasPermission('settings')}
+              className={`flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors ${!hasPermission('settings') ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               <Save size={16} />
               Enregistrer
@@ -898,6 +1251,104 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
         isOpen={showVpnModal}
         onClose={() => setShowVpnModal(false)}
       />
+
+      {/* Reboot Schedule Modal */}
+      <RebootScheduleModal
+        isOpen={showRebootScheduleModal}
+        onClose={() => setShowRebootScheduleModal(false)}
+      />
+
+      {/* DHCP Static Lease Modal */}
+      {showLeaseModal && editingLease && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-[#151515] w-full max-w-md rounded-xl border border-gray-800 shadow-2xl">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-gray-800">
+              <h3 className="text-lg font-semibold text-white">
+                {editingLease.id ? 'Modifier' : 'Ajouter'} un bail statique
+              </h3>
+              <button
+                onClick={() => {
+                  setShowLeaseModal(false);
+                  setEditingLease(null);
+                }}
+                className="p-2 hover:bg-gray-800 rounded-lg text-gray-400 hover:text-white transition-colors"
+              >
+                <ChevronLeft size={20} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-400 mb-2">
+                  Adresse MAC *
+                </label>
+                <input
+                  type="text"
+                  value={editingLease.mac}
+                  onChange={(e) => setEditingLease({ ...editingLease, mac: e.target.value })}
+                  placeholder="AA:BB:CC:DD:EE:FF"
+                  className="w-full px-3 py-2 bg-[#1a1a1a] border border-gray-700 rounded-lg text-white font-mono text-sm focus:outline-none focus:border-blue-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">Format: XX:XX:XX:XX:XX:XX</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-400 mb-2">
+                  Adresse IP *
+                </label>
+                <input
+                  type="text"
+                  value={editingLease.ip}
+                  onChange={(e) => setEditingLease({ ...editingLease, ip: e.target.value })}
+                  placeholder="192.168.1.100"
+                  className="w-full px-3 py-2 bg-[#1a1a1a] border border-gray-700 rounded-lg text-white font-mono text-sm focus:outline-none focus:border-blue-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">Doit être dans la plage DHCP</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-400 mb-2">
+                  Commentaire
+                </label>
+                <input
+                  type="text"
+                  value={editingLease.comment}
+                  onChange={(e) => setEditingLease({ ...editingLease, comment: e.target.value })}
+                  placeholder="Ex: PC Bureau, NAS, Imprimante..."
+                  className="w-full px-3 py-2 bg-[#1a1a1a] border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500"
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-3 p-4 border-t border-gray-800">
+              <button
+                onClick={() => {
+                  setShowLeaseModal(false);
+                  setEditingLease(null);
+                }}
+                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={saveStaticLease}
+                disabled={!editingLease.mac || !editingLease.ip || isLoading}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isLoading ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <Save size={16} />
+                )}
+                {editingLease.id ? 'Modifier' : 'Ajouter'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -37,11 +37,12 @@ export interface VM {
   name: string;
   os: string;
   status: 'running' | 'stopped' | 'starting' | 'stopping';
-  cpuUsage: number;
-  ramUsage: number;
-  ramTotal: number;
-  diskUsage: number;
-  diskTotal: number;
+  vcpus: number;          // Number of virtual CPUs allocated
+  cpuUsage: number;       // CPU usage percentage (0-100)
+  ramUsage: number;       // RAM usage in GB
+  ramTotal: number;       // Total RAM allocated in GB
+  diskUsage: number;      // Disk usage in GB
+  diskTotal: number;      // Total disk size in GB
 }
 
 export interface DownloadTask {

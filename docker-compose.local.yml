@@ -1,0 +1,85 @@
+# ===========================================
+# FreeboxOS Ultra Dashboard - Docker Compose
+# ===========================================
+#
+# Docker Compose configuration for LOCAL DEVELOPMENT
+# This file builds the image locally for testing and development.
+#
+# For production deployment, use docker-compose.yml instead (uses pre-built image from registry)
+#
+# Usage:
+#   1. Build and start:
+#      docker-compose -f docker-compose.local.yml up -d --build
+#
+#   2. With custom port (default: 7505):
+#      DASHBOARD_PORT=8080 docker-compose -f docker-compose.local.yml up -d
+#
+#   3. With environment file:
+#      docker-compose -f docker-compose.local.yml --env-file .env up -d
+#
+#   4. Stop and remove:
+#      docker-compose -f docker-compose.local.yml down
+#
+# Environment variables:
+#   DASHBOARD_PORT - Port to expose the dashboard (default: 7505)
+#   FREEBOX_HOST   - Freebox server hostname (default: mafreebox.freebox.fr)
+
+services:
+  freebox-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - VITE_LOGO_DEV_TOKEN=${VITE_LOGO_DEV_TOKEN:-}
+    container_name: freebox-dashboard-local
+    ports:
+      - "${DASHBOARD_PORT:-7505}:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - FREEBOX_HOST=${FREEBOX_HOST:-mafreebox.freebox.fr}
+      - FREEBOX_TOKEN_FILE=/app/data/freebox_token.json
+    volumes:
+      # Persistent storage for Freebox authentication token
+      - freebox_dashboard_data:/app/data
+    restart: unless-stopped
+    # Health check (use 127.0.0.1 instead of localhost to avoid IPv6 issues)
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # Uncomment to limit resources (optional)
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '1'
+    #       memory: 512M
+    #     reservations:
+    #       cpus: '0.5'
+    #       memory: 256M
+
+  # ===========================================
+  # MCP Server (optional) — Claude AI integration
+  # ===========================================
+  # Activate with: docker-compose -f docker-compose.local.yml --profile mcp up -d --build
+  freebox-mcp:
+    build:
+      context: ./mcp-server
+      dockerfile: Dockerfile
+    container_name: freebox-mcp-local
+    restart: unless-stopped
+    profiles:
+      - mcp
+    environment:
+      - FREEBOX_HOST=${FREEBOX_HOST:-mafreebox.freebox.fr}
+      - FREEBOX_TOKEN_FILE=/app/data/freebox_token.json
+    volumes:
+      - freebox_mcp_data:/app/data
+
+volumes:
+  freebox_dashboard_data:
+    name: freebox_dashboard_data_local
+  freebox_mcp_data:
+    name: freebox_mcp_data_local

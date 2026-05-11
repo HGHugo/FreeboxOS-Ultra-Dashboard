@@ -8,11 +8,12 @@ import {
   Server,
   Power,
   LogOut,
-  Home
+  Home,
+  Network
 } from 'lucide-react';
 import { useCapabilitiesStore } from '../../stores/capabilitiesStore';
 
-export type PageType = 'dashboard' | 'tv' | 'phone' | 'files' | 'vms' | 'analytics' | 'settings';
+export type PageType = 'dashboard' | 'network' | 'tv' | 'phone' | 'files' | 'vms' | 'analytics' | 'settings';
 
 interface FooterProps {
   currentPage?: PageType;
@@ -24,6 +25,7 @@ interface FooterProps {
 // Internal pages (handled within the dashboard)
 const allTabs: { id: PageType; label: string; icon: React.ElementType }[] = [
   { id: 'dashboard', label: 'Accueil', icon: Home },
+  { id: 'network', label: 'Réseau', icon: Network },
   { id: 'tv', label: 'Télévision', icon: Tv },
   { id: 'phone', label: 'Téléphone', icon: Phone },
   { id: 'files', label: 'Fichiers', icon: Folder },

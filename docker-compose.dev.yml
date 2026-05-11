@@ -1,0 +1,59 @@
+# ===========================================
+# FreeboxOS Ultra Dashboard - Docker Compose
+# ===========================================
+#
+# Docker Compose configuration for DEVELOPMENT with hot reload
+# Changes to source files automatically trigger recompilation and browser refresh
+#
+# Usage:
+#   docker compose -f docker-compose.dev.yml up --build
+#
+# Environment variables:
+#   DASHBOARD_PORT - Vite dev server port (default: 3000)
+#   FREEBOX_HOST   - Freebox server hostname (default: mafreebox.freebox.fr)
+
+services:
+  freebox-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: freebox-dashboard-dev
+    ports:
+      - "${DASHBOARD_PORT:-3000}:${DASHBOARD_PORT:-3000}"  # Vite dev server (frontend)
+      - "${SERVER_PORT:-3001}:${SERVER_PORT:-3001}"        # API server (backend)
+    environment:
+      - NODE_ENV=development
+      - FREEBOX_HOST=${FREEBOX_HOST:-mafreebox.freebox.fr}
+      - FREEBOX_TOKEN_FILE=/app/data/freebox_token.json
+      - VITE_PORT=${DASHBOARD_PORT:-3000}
+      - PORT=${SERVER_PORT:-3001}
+    volumes:
+      # Mount source code for hot reload
+      - .:/app
+      # Preserve container's node_modules (avoid overwriting with host's)
+      - /app/node_modules
+      # Persistent storage for Freebox authentication token
+      - freebox_dashboard_data_dev:/app/data
+    restart: unless-stopped
+
+  # MCP Server (optional) — Claude AI integration
+  freebox-mcp:
+    build:
+      context: ./mcp-server
+      dockerfile: Dockerfile
+    container_name: freebox-mcp-dev
+    restart: unless-stopped
+    profiles:
+      - mcp
+    environment:
+      - FREEBOX_HOST=${FREEBOX_HOST:-mafreebox.freebox.fr}
+      - FREEBOX_TOKEN_FILE=/app/data/freebox_token.json
+      - DEBUG=1
+    volumes:
+      - freebox_mcp_data_dev:/app/data
+
+volumes:
+  freebox_dashboard_data_dev:
+    name: freebox_dashboard_data_dev
+  freebox_mcp_data_dev:
+    name: freebox_mcp_data_dev

@@ -18,8 +18,10 @@ import {
   MonitorPlay,
   ExternalLink
 } from 'lucide-react';
-import { useVmStore } from '../stores';
+import { useVmStore, type VmSystemInfo } from '../stores/vmStore';
 import { useCapabilitiesStore } from '../stores/capabilitiesStore';
+import { useAuthStore } from '../stores/authStore';
+import { PermissionBanner } from '../components/ui/PermissionBanner';
 import type { VM } from '../types';
 
 // Format bytes to human readable
@@ -137,29 +139,24 @@ const VmCard: React.FC<{
         </div>
       </div>
 
-      {/* Resources */}
-      <div className="p-4 space-y-3">
-        <ResourceBar
-          label="CPU"
-          value={vm.vcpus}
-          max={vm.vcpus}
-          unit=" vCPU"
-          color="bg-blue-500"
-        />
-        <ResourceBar
-          label="RAM"
-          value={Math.round(vm.memory / (1024 * 1024 * 1024))}
-          max={Math.round(vm.memory / (1024 * 1024 * 1024))}
-          unit=" Go"
-          color="bg-emerald-500"
-        />
-        <ResourceBar
-          label="Disque"
-          value={Math.round(vm.disk_size / (1024 * 1024 * 1024))}
-          max={Math.round(vm.disk_size / (1024 * 1024 * 1024))}
-          unit=" Go"
-          color="bg-cyan-500"
-        />
+      {/* Resources - Note: Per-VM usage stats are NOT available in Freebox API */}
+      <div className="p-4">
+        <div className="flex items-center gap-4 text-sm">
+          <div className="flex items-center gap-2">
+            <Cpu size={16} className="text-blue-400" />
+            <span className="text-gray-400">{vm.vcpus} vCPU</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <MemoryStick size={16} className="text-emerald-400" />
+            <span className="text-gray-400">{Math.round(vm.ramTotal * 10) / 10} Go</span>
+          </div>
+          {vm.diskTotal > 0 && (
+            <div className="flex items-center gap-2">
+              <HardDrive size={16} className="text-cyan-400" />
+              <span className="text-gray-400">{Math.round(vm.diskTotal)} Go</span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Actions */}
@@ -354,9 +351,11 @@ interface VmsPageProps {
 export const VmsPage: React.FC<VmsPageProps> = ({ onBack }) => {
   const {
     vms,
+    systemInfo,
     isLoading,
     error,
     fetchVms,
+    fetchSystemInfo,
     startVm,
     stopVm
   } = useVmStore();
@@ -364,14 +363,19 @@ export const VmsPage: React.FC<VmsPageProps> = ({ onBack }) => {
   // Get capabilities to check VM support
   const { supportsVm, hasLimitedVmSupport, getMaxVms, getModelName } = useCapabilitiesStore();
 
+  // Get permissions from auth store
+  const { permissions, freeboxUrl } = useAuthStore();
+  const hasVmPermission = permissions.vm === true;
+
   const [showCreateModal, setShowCreateModal] = useState(false);
 
-  // Fetch VMs on mount (only if supported)
+  // Fetch VMs and system info on mount (only if supported)
   useEffect(() => {
     if (supportsVm()) {
       fetchVms();
+      fetchSystemInfo();
     }
-  }, [fetchVms, supportsVm]);
+  }, [fetchVms, fetchSystemInfo, supportsVm]);
 
   // VM actions
   const handleStartVm = async (id: string) => {
@@ -504,6 +508,11 @@ export const VmsPage: React.FC<VmsPageProps> = ({ onBack }) => {
       </header>
 
       <main className="max-w-[1920px] mx-auto px-4 py-6 pb-24">
+        {/* Permission warning */}
+        {!hasVmPermission && (
+          <PermissionBanner permission="vm" freeboxUrl={freeboxUrl} />
+        )}
+
         {/* Error message */}
         {error && (
           <div className="mb-6 p-4 bg-red-900/20 border border-red-700/50 rounded-xl flex items-center gap-3">
@@ -516,6 +525,79 @@ export const VmsPage: React.FC<VmsPageProps> = ({ onBack }) => {
         {isLoading && vms.length === 0 && (
           <div className="flex items-center justify-center py-16">
             <Loader2 size={32} className="text-purple-400 animate-spin" />
+          </div>
+        )}
+
+        {/* Global VM System Stats */}
+        {systemInfo && (
+          <div className="mb-6 p-4 bg-[#121212] rounded-xl border border-gray-800">
+            <h3 className="text-sm font-medium text-gray-400 mb-4">Ressources VM globales</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {/* Memory */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <MemoryStick size={16} className="text-emerald-400" />
+                  <span>Mémoire</span>
+                </div>
+                <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-emerald-500 transition-all"
+                    style={{ width: `${systemInfo.total_memory > 0 ? (systemInfo.used_memory / systemInfo.total_memory) * 100 : 0}%` }}
+                  />
+                </div>
+                <div className="text-xs text-gray-400">
+                  {Math.round(systemInfo.used_memory / 1024 * 10) / 10} / {Math.round(systemInfo.total_memory / 1024 * 10) / 10} Go
+                </div>
+              </div>
+
+              {/* CPUs */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <Cpu size={16} className="text-blue-400" />
+                  <span>vCPUs</span>
+                </div>
+                <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-blue-500 transition-all"
+                    style={{ width: `${systemInfo.total_cpus > 0 ? (systemInfo.used_cpus / systemInfo.total_cpus) * 100 : 0}%` }}
+                  />
+                </div>
+                <div className="text-xs text-gray-400">
+                  {systemInfo.used_cpus} / {systemInfo.total_cpus} alloués
+                </div>
+              </div>
+
+              {/* USB Passthrough */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <Power size={16} className="text-purple-400" />
+                  <span>USB Passthrough</span>
+                </div>
+                <div className={`text-sm ${systemInfo.usb_used ? 'text-amber-400' : 'text-gray-400'}`}>
+                  {systemInfo.usb_used ? 'En cours d\'utilisation' : 'Disponible'}
+                </div>
+                {systemInfo.usb_ports?.length > 0 && (
+                  <div className="text-xs text-gray-500">
+                    {systemInfo.usb_ports.length} port(s) USB
+                  </div>
+                )}
+              </div>
+
+              {/* VM Count */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <Server size={16} className="text-purple-400" />
+                  <span>VMs</span>
+                </div>
+                <div className="text-2xl font-bold text-white">
+                  {vms.filter(vm => vm.status === 'running').length}
+                  <span className="text-sm font-normal text-gray-500 ml-1">/ {vms.length}</span>
+                </div>
+                <div className="text-xs text-gray-400">
+                  actives
+                </div>
+              </div>
+            </div>
           </div>
         )}
 

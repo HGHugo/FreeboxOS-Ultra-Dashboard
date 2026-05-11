@@ -13,8 +13,9 @@ import {
 } from './components/widgets';
 import { ActionButton, UnsupportedFeature } from './components/ui';
 import { LoginModal, TrafficHistoryModal, WifiSettingsModal, CreateVmModal } from './components/modals';
-import { TvPage, PhonePage, FilesPage, VmsPage, AnalyticsPage, SettingsPage } from './pages';
+import { TvPage, PhonePage, FilesPage, VmsPage, AnalyticsPage, SettingsPage, NetworkPage } from './pages';
 import { usePolling } from './hooks/usePolling';
+import { useConnectionWebSocket } from './hooks/useConnectionWebSocket';
 import {
   useAuthStore,
   useSystemStore,
@@ -25,6 +26,7 @@ import {
   useVmStore,
   useHistoryStore
 } from './stores';
+import { startPermissionsRefresh, stopPermissionsRefresh } from './stores/authStore';
 import { useCapabilitiesStore } from './stores/capabilitiesStore';
 import { POLLING_INTERVALS, formatSpeed } from './utils/constants';
 import {
@@ -48,7 +50,7 @@ const App: React.FC = () => {
 
   // Data stores
   const { info: systemInfo, temperatureHistory: systemTempHistory, fetchSystemInfo, reboot } = useSystemStore();
-  const { status: connectionStatus, history: networkHistory, extendedHistory, fetchConnectionStatus, fetchExtendedHistory } = useConnectionStore();
+  const { status: connectionStatus, history: networkHistory, extendedHistory, temperatureHistory, fetchConnectionStatus, fetchExtendedHistory, fetchTemperatureHistory } = useConnectionStore();
   const { networks: wifiNetworks, isLoading: wifiLoading, fetchWifiStatus, toggleBss } = useWifiStore();
   const { devices, fetchDevices } = useLanStore();
   const { tasks: downloads, fetchDownloads } = useDownloadsStore();
@@ -71,6 +73,10 @@ const App: React.FC = () => {
   const [downloadFilter, setDownloadFilter] = useState<'all' | 'active' | 'done'>('all');
   const [downloadSort, setDownloadSort] = useState<'recent' | 'name' | 'progress'>('recent');
 
+  // Navigation state for FilesPage
+  const [filesPageInitialTab, setFilesPageInitialTab] = useState<'files' | 'downloads' | 'shares'>('files');
+  const [filesPageInitialDownloadId, setFilesPageInitialDownloadId] = useState<string | undefined>(undefined);
+
   // Filters for history
   const [historyFilter, setHistoryFilter] = useState<'all' | 'connection' | 'calls' | 'notifications'>('all');
   const [historyPeriod, setHistoryPeriod] = useState<'30d' | '7d' | '24h'>('30d');
@@ -80,11 +86,18 @@ const App: React.FC = () => {
     checkAuth();
   }, [checkAuth]);
 
-  // Polling when logged in
-  usePolling(fetchConnectionStatus, {
-    enabled: isLoggedIn,
-    interval: POLLING_INTERVALS.connection
-  });
+  // Start/stop periodic permissions refresh based on login state
+  useEffect(() => {
+    if (isLoggedIn) {
+      startPermissionsRefresh();
+    } else {
+      stopPermissionsRefresh();
+    }
+    return () => stopPermissionsRefresh();
+  }, [isLoggedIn]);
+
+  // WebSocket for real-time connection status (replaces polling)
+  useConnectionWebSocket({ enabled: isLoggedIn });
 
   usePolling(fetchSystemInfo, {
     enabled: isLoggedIn,
@@ -204,6 +217,21 @@ const App: React.FC = () => {
     );
   }
 
+  // Render Network page
+  if (currentPage === 'network') {
+    return (
+      <div className="min-h-screen pb-20 bg-[#050505] text-gray-300 font-sans selection:bg-blue-500/30">
+        <NetworkPage onBack={() => setCurrentPage('dashboard')} />
+        <Footer
+          currentPage={currentPage}
+          onPageChange={handlePageChange}
+          onReboot={handleReboot}
+          onLogout={handleLogout}
+        />
+      </div>
+    );
+  }
+
   // Render TV page
   if (currentPage === 'tv') {
     return (
@@ -238,7 +266,15 @@ const App: React.FC = () => {
   if (currentPage === 'files') {
     return (
       <div className="min-h-screen pb-20 bg-[#050505] text-gray-300 font-sans selection:bg-blue-500/30">
-        <FilesPage onBack={() => setCurrentPage('dashboard')} />
+        <FilesPage
+          onBack={() => {
+            setCurrentPage('dashboard');
+            setFilesPageInitialTab('files');
+            setFilesPageInitialDownloadId(undefined);
+          }}
+          initialTab={filesPageInitialTab}
+          initialDownloadId={filesPageInitialDownloadId}
+        />
         <Footer
           currentPage={currentPage}
           onPageChange={handlePageChange}
@@ -485,7 +521,12 @@ const App: React.FC = () => {
             </Card>
 
             <Card
-              title="Fichiers"
+              title="Téléchargements"
+              onTitleClick={() => {
+                setFilesPageInitialTab('downloads');
+                setFilesPageInitialDownloadId(undefined);
+                setCurrentPage('files');
+              }}
               actions={
                 <div className="flex gap-2">
                   <button
@@ -529,7 +570,14 @@ const App: React.FC = () => {
                   </p>
                 </div>
               ) : filteredDownloads.length > 0 ? (
-                <FilePanel tasks={filteredDownloads} />
+                <FilePanel
+                  tasks={filteredDownloads}
+                  onTaskClick={(task) => {
+                    setFilesPageInitialTab('downloads');
+                    setFilesPageInitialDownloadId(task.id);
+                    setCurrentPage('files');
+                  }}
+                />
               ) : downloads.length > 0 ? (
                 <div className="text-center py-8">
                   <Download size={32} className="mx-auto text-gray-600 mb-2" />
@@ -618,10 +666,13 @@ const App: React.FC = () => {
           isOpen={isTrafficModalOpen}
           onClose={() => setIsTrafficModalOpen(false)}
           data={extendedHistory.length > 0 ? extendedHistory : undefined}
-          temperatureData={systemTempHistory}
+          temperatureData={temperatureHistory}
           systemInfo={systemInfo}
           connectionStatus={connectionStatus}
-          onFetchHistory={fetchExtendedHistory}
+          onFetchHistory={() => {
+            fetchExtendedHistory();
+            fetchTemperatureHistory();
+          }}
         />
 
         {/* WiFi Settings Modal */}

@@ -40,14 +40,30 @@ export interface DiskInfo {
   }[];
 }
 
+export interface ShareLink {
+  token: string;
+  path: string;
+  name: string;
+  expire: number;
+  fullurl: string;
+}
+
 interface FsState {
   // Current directory content
   files: FsFile[];
   currentPath: string;
 
+  // v15 Pagination
+  cursor: string | null;
+  hasMore: boolean;
+  isLoadingMore: boolean;
+
   // Storage info
   storage: StorageInfo | null;
   disks: DiskInfo[];
+
+  // Share links
+  shareLinks: ShareLink[];
 
   // UI State
   isLoading: boolean;
@@ -55,7 +71,8 @@ interface FsState {
   selectedFiles: string[];
 
   // Actions
-  listFiles: (path?: string) => Promise<void>;
+  listFiles: (path?: string, reset?: boolean) => Promise<void>;
+  loadMore: () => Promise<void>;
   navigateTo: (path: string) => Promise<void>;
   navigateUp: () => Promise<void>;
   getFileInfo: (path: string) => Promise<FsFile | null>;
@@ -71,39 +88,131 @@ interface FsState {
   toggleSelectFile: (path: string) => void;
   clearSelection: () => void;
   selectAll: () => void;
+  // Share links
+  fetchShareLinks: () => Promise<void>;
+  createShareLink: (path: string, expireDays?: number) => Promise<ShareLink | null>;
+  deleteShareLink: (token: string) => Promise<boolean>;
+}
+
+// Response type for v15 API (with pagination)
+interface FsListResponse {
+  entries?: FsFile[];
+  cursor?: string;
 }
 
 export const useFsStore = create<FsState>((set, get) => ({
   files: [],
   currentPath: '/',
+  cursor: null,
+  hasMore: false,
+  isLoadingMore: false,
   storage: null,
   disks: [],
+  shareLinks: [],
   isLoading: false,
   error: null,
   selectedFiles: [],
 
-  listFiles: async (path?: string) => {
+  listFiles: async (path?: string, reset = true) => {
     const targetPath = path ?? get().currentPath;
-    set({ isLoading: true, error: null });
+    const { cursor: currentCursor } = get();
+
+    // If reset, start fresh. Otherwise, use cursor for pagination
+    if (reset) {
+      set({ isLoading: true, error: null, cursor: null, hasMore: false });
+    } else {
+      set({ isLoadingMore: true });
+    }
 
     try {
-      const response = await api.get<FsFile[]>(`${API_ROUTES.FS}/list?path=${encodeURIComponent(targetPath)}`);
+      // Build URL with optional path and cursor
+      let url = `${API_ROUTES.FS}/list`;
+      const params: string[] = [];
+
+      if (targetPath !== '/' && targetPath !== '') {
+        params.push(`path=${encodeURIComponent(targetPath)}`);
+      }
+
+      // Add cursor for pagination (v15+)
+      if (!reset && currentCursor) {
+        params.push(`cursor=${encodeURIComponent(currentCursor)}`);
+      }
+
+      if (params.length > 0) {
+        url += '?' + params.join('&');
+      }
+
+      // Response can be either array (old format) or object with entries/cursor (v15)
+      const response = await api.get<FsFile[] | FsListResponse>(url);
+
       if (response.success && response.result) {
+        let files: FsFile[];
+        let newCursor: string | null = null;
+
+        // Handle both v15 format (object with entries) and legacy format (array)
+        if (Array.isArray(response.result)) {
+          files = response.result;
+        } else {
+          files = response.result.entries || [];
+          newCursor = response.result.cursor || null;
+        }
+
         // Sort: directories first, then by name
-        const sorted = [...response.result].sort((a, b) => {
+        const sorted = [...files].sort((a, b) => {
           if (a.type === 'dir' && b.type !== 'dir') return -1;
           if (a.type !== 'dir' && b.type === 'dir') return 1;
           return a.name.localeCompare(b.name);
         });
-        set({ files: sorted, currentPath: targetPath, isLoading: false, selectedFiles: [] });
+
+        if (reset) {
+          set({
+            files: sorted,
+            currentPath: targetPath,
+            cursor: newCursor,
+            hasMore: !!newCursor,
+            isLoading: false,
+            selectedFiles: []
+          });
+        } else {
+          // Append to existing files
+          const existingFiles = get().files;
+          set({
+            files: [...existingFiles, ...sorted],
+            cursor: newCursor,
+            hasMore: !!newCursor,
+            isLoadingMore: false
+          });
+        }
       } else {
         // No disk or no access - just show empty list without error
-        set({ files: [], currentPath: targetPath, isLoading: false, error: null });
+        set({
+          files: reset ? [] : get().files,
+          currentPath: targetPath,
+          cursor: null,
+          hasMore: false,
+          isLoading: false,
+          isLoadingMore: false,
+          error: null
+        });
       }
     } catch {
       // Silently fail - show empty directory if no disk
-      set({ files: [], currentPath: targetPath, isLoading: false, error: null });
+      set({
+        files: reset ? [] : get().files,
+        currentPath: targetPath,
+        cursor: null,
+        hasMore: false,
+        isLoading: false,
+        isLoadingMore: false,
+        error: null
+      });
     }
+  },
+
+  loadMore: async () => {
+    const { hasMore, isLoadingMore, currentPath } = get();
+    if (!hasMore || isLoadingMore) return;
+    await get().listFiles(currentPath, false);
   },
 
   navigateTo: async (path: string) => {
@@ -114,10 +223,26 @@ export const useFsStore = create<FsState>((set, get) => ({
     const { currentPath } = get();
     if (currentPath === '/') return;
 
-    const parts = currentPath.split('/').filter(Boolean);
-    parts.pop();
-    const newPath = '/' + parts.join('/');
-    await get().listFiles(newPath || '/');
+    try {
+      // Decode base64 path to get the real path
+      const decodedPath = decodeURIComponent(escape(atob(currentPath)));
+      // Split by / and remove the last segment
+      const parts = decodedPath.split('/').filter(Boolean);
+      parts.pop();
+
+      if (parts.length === 0) {
+        // Back to root
+        await get().listFiles('/');
+      } else {
+        // Re-encode the parent path
+        const parentPath = '/' + parts.join('/');
+        const encodedParentPath = btoa(unescape(encodeURIComponent(parentPath)));
+        await get().listFiles(encodedParentPath);
+      }
+    } catch {
+      // If decoding fails, try the old method or go to root
+      await get().listFiles('/');
+    }
   },
 
   getFileInfo: async (path: string) => {
@@ -147,13 +272,10 @@ export const useFsStore = create<FsState>((set, get) => ({
 
   rename: async (oldPath: string, newName: string) => {
     const { listFiles } = get();
-    // Construct new path
-    const parts = oldPath.split('/');
-    parts.pop();
-    const newPath = parts.join('/') + '/' + newName;
 
     try {
-      const response = await api.post(`${API_ROUTES.FS}/rename`, { src: oldPath, dst: newPath });
+      // src is base64 path, dst is just the new name (clear text)
+      const response = await api.post(`${API_ROUTES.FS}/rename`, { src: oldPath, dst: newName });
       if (response.success) {
         await listFiles();
         return true;
@@ -266,5 +388,55 @@ export const useFsStore = create<FsState>((set, get) => ({
   selectAll: () => {
     const { files } = get();
     set({ selectedFiles: files.map(f => f.path) });
+  },
+
+  // Share links
+  fetchShareLinks: async () => {
+    try {
+      const response = await api.get<ShareLink[]>(`${API_ROUTES.FS}/share`);
+      if (response.success && response.result) {
+        set({ shareLinks: response.result });
+      }
+    } catch {
+      // Silently fail
+    }
+  },
+
+  createShareLink: async (path: string, expireDays?: number) => {
+    try {
+      // Calculate expiration timestamp (days from now)
+      const expire = expireDays
+        ? Math.floor(Date.now() / 1000) + (expireDays * 24 * 60 * 60)
+        : 0; // 0 = no expiration
+
+      const response = await api.post<ShareLink>(`${API_ROUTES.FS}/share`, { path, expire });
+      if (response.success && response.result) {
+        // Refresh share links list
+        await get().fetchShareLinks();
+        return response.result;
+      }
+      set({ error: response.error?.message || 'Erreur lors de la création du lien de partage' });
+      return null;
+    } catch {
+      set({ error: 'Erreur lors de la création du lien de partage' });
+      return null;
+    }
+  },
+
+  deleteShareLink: async (token: string) => {
+    try {
+      const response = await api.delete(`${API_ROUTES.FS}/share/${encodeURIComponent(token)}`);
+      if (response.success) {
+        // Remove from local state immediately
+        const { shareLinks } = get();
+        set({ shareLinks: shareLinks.filter(link => link.token !== token) });
+        return true;
+      }
+      set({ error: response.error?.message || 'Erreur lors de la suppression du lien' });
+      return false;
+    } catch {
+      set({ error: 'Erreur lors de la suppression du lien' });
+      return false;
+    }
   }
 }));

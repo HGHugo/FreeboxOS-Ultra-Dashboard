@@ -46,11 +46,84 @@ router.get('/:id/peers', asyncHandler(async (req, res) => {
   res.json(result);
 }));
 
-// POST /api/downloads - Add new download
+// GET /api/downloads/:id/files - Get download files
+router.get('/:id/files', asyncHandler(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) {
+    throw createError('Invalid download ID', 400, 'INVALID_ID');
+  }
+  const result = await freeboxApi.getDownloadFiles(id);
+  res.json(result);
+}));
+
+// PUT /api/downloads/:id/files/:fileId - Update download file priority
+router.put('/:id/files/:fileId', asyncHandler(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const fileId = req.params.fileId;
+  if (isNaN(id)) {
+    throw createError('Invalid download ID', 400, 'INVALID_ID');
+  }
+  const { priority } = req.body;
+  const result = await freeboxApi.updateDownloadFile(id, fileId, priority);
+  res.json(result);
+}));
+
+// GET /api/downloads/:id/pieces - Get download pieces
+router.get('/:id/pieces', asyncHandler(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) {
+    throw createError('Invalid download ID', 400, 'INVALID_ID');
+  }
+  const result = await freeboxApi.getDownloadPieces(id);
+  res.json(result);
+}));
+
+// GET /api/downloads/:id/blacklist - Get download blacklist
+router.get('/:id/blacklist', asyncHandler(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) {
+    throw createError('Invalid download ID', 400, 'INVALID_ID');
+  }
+  const result = await freeboxApi.getDownloadBlacklist(id);
+  res.json(result);
+}));
+
+// DELETE /api/downloads/:id/blacklist/empty - Empty download blacklist
+router.delete('/:id/blacklist/empty', asyncHandler(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) {
+    throw createError('Invalid download ID', 400, 'INVALID_ID');
+  }
+  const result = await freeboxApi.emptyDownloadBlacklist(id);
+  res.json(result);
+}));
+
+// GET /api/downloads/:id/log - Get download log
+router.get('/:id/log', asyncHandler(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) {
+    throw createError('Invalid download ID', 400, 'INVALID_ID');
+  }
+  const result = await freeboxApi.getDownloadLog(id);
+  res.json(result);
+}));
+
+// POST /api/downloads - Add new download (URL or file)
 router.post('/', asyncHandler(async (req, res) => {
-  const { url, downloadDir } = req.body;
+  const { url, downloadDir, fileBase64, filename } = req.body;
+
+  // If fileBase64 is provided, use file upload method
+  if (fileBase64 && filename) {
+    // Convert base64 to Buffer
+    const fileBuffer = Buffer.from(fileBase64, 'base64');
+    const result = await freeboxApi.addDownloadFromFile(fileBuffer, filename, downloadDir);
+    res.json(result);
+    return;
+  }
+
+  // Otherwise use URL method
   if (!url) {
-    throw createError('URL is required', 400, 'MISSING_URL');
+    throw createError('URL or file is required', 400, 'MISSING_URL_OR_FILE');
   }
   const result = await freeboxApi.addDownload(url, downloadDir);
   res.json(result);
