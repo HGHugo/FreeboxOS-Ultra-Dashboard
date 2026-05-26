@@ -113,6 +113,13 @@ export const useWifiStore = create<WifiState>((set, get) => ({
         // For Freebox v9+, BSS contains band info directly in status
         for (const b of bss || []) {
           if (b.config?.enabled) {
+            // Skip secondary BSSes (e.g. guest networks broadcast on the same
+            // radio as the main one) — they share the SSID with the main BSS
+            // and would otherwise be deduped randomly. `is_main_bss === false`
+            // is the explicit signal; older API responses leave the field
+            // undefined, in which case we keep the BSS.
+            if (b.status?.is_main_bss === false) continue;
+
             // Get band from BSS status (Freebox v9+) or try to find matching AP
             let band: '2.4GHz' | '5GHz' | '6GHz' = '2.4GHz';
 
@@ -127,8 +134,11 @@ export const useWifiStore = create<WifiState>((set, get) => ({
               }
             }
 
-            // Only add one network per band (they share SSID)
-            const bandKey = `${b.config.ssid}-${band}`;
+            // Dedup per physical radio (phy_id + band). The Freebox Ultra
+            // exposes TWO distinct 5GHz radios (e.g. one 80 MHz + one 160 MHz)
+            // that share the same SSID — keying by `ssid` would drop one of
+            // them non-deterministically. See issue #10.
+            const bandKey = `${b.phy_id}-${band}`;
             if (!seenBands.has(bandKey)) {
               seenBands.add(bandKey);
 
