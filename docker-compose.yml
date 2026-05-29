@@ -72,7 +72,7 @@ services:
   # Activate with: docker-compose --profile mcp up -d
   # See: https://github.com/leto1210/mafreebox-mcpserver
   freebox-mcp:
-    image: ghcr.io/leto1210/mafreebox-mcpserver:latest
+    image: ghcr.io/leto1210/mafreebox-mcpserver:v1.5.0
     container_name: freebox-mcp
     restart: unless-stopped
     profiles:
