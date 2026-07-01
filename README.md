@@ -196,7 +196,7 @@ Merci à [Loule95450](https://github.com/Loule95450) & [Rayandri](https://github
 
 ## Integration MCP — Piloter la Freebox via Claude AI (Optionnel)
 
-Le dashboard peut etre complete par un serveur [MCP (Model Context Protocol)](https://github.com/leto1210/mafreebox-mcpserver) qui permet de piloter votre Freebox en langage naturel depuis **Claude Desktop**.
+Le dashboard peut etre complete par un serveur [MCP (Model Context Protocol)](https://github.com/leto1210/mafreebox-mcpserver) qui permet de piloter votre Freebox en langage naturel depuis **Claude Desktop**. La version actuelle (v1.5.0) expose **116 outils** couvrant la quasi-totalite de l'API Freebox OS.
 
 Exemples de commandes possibles :
 - *"Quels appareils sont connectes en ce moment ?"*
@@ -204,6 +204,9 @@ Exemples de commandes possibles :
 - *"Quelle est la temperature de ma Freebox ?"*
 - *"Ouvre le port 8080 vers mon serveur 192.168.1.10"*
 - *"Demarre la VM Ubuntu"*
+- *"Cree un repertoire sur le disque Freebox"*
+- *"Montre-moi la configuration IPv6"*
+- *"Liste les distributions VM disponibles"*
 
 ### Activation
 
@@ -232,7 +235,7 @@ Editez le fichier de configuration Claude Desktop :
         "run", "--rm", "-i",
         "-v", "freebox_mcp_data:/app/data",
         "-e", "FREEBOX_HOST=mafreebox.freebox.fr",
-        "ghcr.io/leto1210/mafreebox-mcpserver:latest"
+        "ghcr.io/leto1210/mafreebox-mcpserver:v1.5.0"
       ]
     }
   }
