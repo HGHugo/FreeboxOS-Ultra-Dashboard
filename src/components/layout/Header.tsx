@@ -16,6 +16,7 @@ import { formatSpeed, formatTemperature } from '../../utils/constants';
 import { useCapabilitiesStore } from '../../stores/capabilitiesStore';
 import { useFavicon } from '../../hooks/useFavicon';
 import type { SystemInfo, ConnectionStatus, SystemSensor, SystemFan } from '../../types/api';
+import { AppVersionPill } from '../ui/AppVersionPill';
 
 // Map model to display name
 const getDisplayName = (model: string): string => {
@@ -212,13 +213,15 @@ export const Header: React.FC<HeaderProps> = ({ systemInfo, connectionStatus }) 
 
   return (
     <header className="flex flex-col md:flex-row items-center justify-between p-4 bg-[#111111] border-b border-gray-800 gap-4">
-      {/* Box identifier */}
-      <div className="flex items-center gap-3 bg-[#1a1a1a] px-4 py-2 rounded-lg border border-gray-700">
-        <img src={logoUltra} alt="Freebox Ultra" className="w-7 h-7 flex-shrink-0" />
-        <span className="font-semibold text-gray-200 leading-none">{boxName}</span>
+      <div className="flex gap-4">
+        {/* Box identifier */}
+        <div className="flex items-center gap-3 bg-[#1a1a1a] px-4 py-2 rounded-lg border border-gray-700">
+          <img src={logoUltra} alt="Freebox Ultra" className="w-7 h-7 flex-shrink-0" />
+          <span className="font-semibold text-gray-200 leading-none">{boxName}</span>
+        </div>
+  
+        <AppVersionPill />
       </div>
-
-
 
       {/* Status badges */}
       <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-2 md:pb-0 scrollbar-hide">
