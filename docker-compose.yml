@@ -7,7 +7,7 @@
 # For local development (building from source), use docker-compose.local.yml instead
 #
 # Usage:
-#   docker-compose up -d
+#   docker-compose up -d --build
 #
 # Environment variables (optional):
 #   DASHBOARD_PORT - Dashboard port (default: 7505)
@@ -22,13 +22,21 @@
 
 services:
   freebox-dashboard:
-    image: ghcr.io/hghugo/freeboxos-ultra-dashboard:latest
+    # SECURITY (fork): build this hardened source instead of pulling upstream's
+    # unpinned ghcr.io/hghugo/freeboxos-ultra-dashboard:latest image, which does
+    # NOT contain these fixes.
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - VITE_LOGO_DEV_TOKEN=${VITE_LOGO_DEV_TOKEN:-}
     container_name: freebox-dashboard
     restart: unless-stopped
 
     # Port mapping: host:container
     ports:
-      - "${DASHBOARD_PORT:-7505}:3000"
+      # DASHBOARD_BIND=127.0.0.1 to keep it local-only, or your LAN IP
+      - "${DASHBOARD_BIND:-0.0.0.0}:${DASHBOARD_PORT:-7505}:3000"
 
     # Environment configuration
     environment:
@@ -36,6 +44,8 @@ services:
       - PORT=3000
       - FREEBOX_HOST=${FREEBOX_HOST:-mafreebox.freebox.fr}
       - FREEBOX_TOKEN_FILE=/app/data/freebox_token.json
+      # Dashboard password (if empty, one is generated and printed in the logs)
+      - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:-}
       # Optional: Mock mode for testing different Freebox models
       # - MOCK_FREEBOX_MODEL=ultra  # ultra, delta, pop, revolution
 

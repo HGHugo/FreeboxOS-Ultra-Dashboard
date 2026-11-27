@@ -24,6 +24,10 @@ dist-server/
 .env.*
 *.local
 freebox_token.json
+.freebox_token
+.reboot_schedule.json
+dashboard_password
+data/
 
 # OS files
 .DS_Store

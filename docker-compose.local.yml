@@ -33,11 +33,12 @@ services:
         - VITE_LOGO_DEV_TOKEN=${VITE_LOGO_DEV_TOKEN:-}
     container_name: freebox-dashboard-local
     ports:
-      - "${DASHBOARD_PORT:-7505}:3000"
+      - "${DASHBOARD_BIND:-0.0.0.0}:${DASHBOARD_PORT:-7505}:3000"
     environment:
       - NODE_ENV=production
       - PORT=3000
       - FREEBOX_HOST=${FREEBOX_HOST:-mafreebox.freebox.fr}
+      - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:-}
       - FREEBOX_TOKEN_FILE=/app/data/freebox_token.json
     volumes:
       # Persistent storage for Freebox authentication token

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { freeboxApi } from '../services/freeboxApi.js';
-import { rebootScheduler } from '../services/scheduler.js';
-import { asyncHandler } from '../middleware/errorHandler.js';
+import { rebootScheduler, InvalidScheduleError } from '../services/scheduler.js';
+import { asyncHandler, createError } from '../middleware/errorHandler.js';
 import { normalizeSystemInfo } from '../services/apiNormalizer.js';
 
 const router = Router();
@@ -53,8 +53,15 @@ router.get('/reboot/schedule', asyncHandler(async (_req, res) => {
 
 // POST /api/system/reboot/schedule - Update reboot schedule
 router.post('/reboot/schedule', asyncHandler(async (req, res) => {
-  const schedule = rebootScheduler.updateSchedule(req.body);
-  res.json({ success: true, result: schedule });
+  try {
+    const schedule = rebootScheduler.updateSchedule(req.body);
+    res.json({ success: true, result: schedule });
+  } catch (error) {
+    if (error instanceof InvalidScheduleError) {
+      throw createError(error.message, 400, 'INVALID_SCHEDULE');
+    }
+    throw error;
+  }
 }));
 
 // POST /api/system/reboot - Reboot Freebox

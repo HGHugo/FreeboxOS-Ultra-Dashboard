@@ -100,7 +100,13 @@ router.post('/set-url', asyncHandler(async (req, res) => {
     throw createError('URL is required', 400, 'MISSING_URL');
   }
 
-  freeboxApi.setBaseUrl(url);
+  if (!freeboxApi.setBaseUrl(url)) {
+    throw createError(
+      'URL non autorisée (seules mafreebox.freebox.fr et l\'IP locale configurée sont acceptées)',
+      400,
+      'URL_NOT_ALLOWED'
+    );
+  }
   res.json({
     success: true,
     result: {

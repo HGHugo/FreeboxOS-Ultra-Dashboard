@@ -48,8 +48,31 @@ class FreeboxApiService {
     }
 
     // Set the base URL (for switching between mafreebox.freebox.fr and local IP)
-    setBaseUrl(url: string) {
-        this.baseUrl = url;
+    // SECURITY: only allow known Freebox endpoints. Upstream accepted any URL from
+    // the client, which made the server send its X-Fbx-App-Auth session token
+    // (and login HMACs) to an attacker-controlled host, and enabled SSRF.
+    // Extra hosts can be allowed with FREEBOX_ALLOWED_URLS (comma-separated).
+    static allowedBaseUrls(): Set<string> {
+        const norm = (u: string) => u.trim().replace(/\/+$/, '').toLowerCase();
+        const list = [
+            'https://mafreebox.freebox.fr',
+            config.freebox.url,
+            `https://${config.freebox.localIp}`,
+            `http://${config.freebox.localIp}`, // "IP locale" option of the login modal
+            ...(process.env.FREEBOX_ALLOWED_URLS || '').split(',').filter(Boolean)
+        ];
+        return new Set(list.map(norm));
+    }
+
+    setBaseUrl(url: unknown): boolean {
+        if (typeof url !== 'string') return false;
+        const normalized = url.trim().replace(/\/+$/, '').toLowerCase();
+        if (!FreeboxApiService.allowedBaseUrls().has(normalized)) {
+            console.warn('[FreeboxAPI] Refused non-allowlisted base URL');
+            return false;
+        }
+        this.baseUrl = normalized;
+        return true;
     }
 
     // Get current base URL
@@ -116,6 +139,20 @@ class FreeboxApiService {
     private buildUrl(endpoint: string, apiVersion = config.freebox.apiVersion): string {
         // All endpoints use v15 now (the latest API version)
         // WiFi was previously v2 but is now supported in v15
+        // SECURITY: route params (ids, share tokens, paths) are concatenated into
+        // endpoints. Express decodes %2F in req.params, and fetch() normalises
+        // "../", so "DELETE /api/fs/share/..%2Fvm%2F1" used to hit /vm/1.
+        // Reject any dot-segment or fragment in the path part of the endpoint.
+        const pathPart = endpoint.split('?')[0];
+        let decoded = pathPart;
+        try {
+            decoded = decodeURIComponent(pathPart);
+        } catch {
+            throw Object.assign(new Error('Invalid endpoint'), { statusCode: 400, code: 'INVALID_PARAM' });
+        }
+        if (/(^|[\/\\])\.{1,2}([\/\\]|$)/.test(decoded) || decoded.includes('#') || decoded.includes('\\')) {
+            throw Object.assign(new Error('Invalid parameter in request path'), { statusCode: 400, code: 'INVALID_PARAM' });
+        }
         return `${this.baseUrl}/api/${apiVersion}${endpoint}`;
     }
 
@@ -676,7 +713,7 @@ class FreeboxApiService {
     async addDownloadFromFile(fileBuffer: Buffer, filename: string, downloadDir?: string): Promise<FreeboxApiResponse> {
         // The Freebox API requires multipart/form-data for file uploads
         // We'll build the multipart body manually since form-data + fetch has issues
-        const boundary = '----FreeboxFormBoundary' + Math.random().toString(36).substring(2);
+        const boundary = '----FreeboxFormBoundary' + crypto.randomBytes(16).toString('hex');
 
         let body = '';
 
@@ -714,7 +751,6 @@ class FreeboxApiService {
         }
 
         console.log('[FreeboxAPI] addDownloadFromFile URL:', url);
-        console.log('[FreeboxAPI] addDownloadFromFile headers:', headers);
 
         try {
             const response = await fetch(url, {

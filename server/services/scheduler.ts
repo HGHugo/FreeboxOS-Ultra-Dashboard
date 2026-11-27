@@ -15,6 +15,27 @@ const DEFAULT_SCHEDULE: RebootSchedule = {
   mapping: {}
 };
 
+// SECURITY: strict validation. Upstream spread req.body into the schedule and
+// built the cron expression by string concatenation, so values like "*:*"
+// produced a reboot every minute, and non-string values crashed the server
+// at every start (persistent DoS).
+const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+function sanitizeMapping(raw: unknown): Record<number, string> | null {
+  if (raw === undefined || raw === null) return {};
+  if (typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const mapping: Record<number, string> = {};
+  for (const [d, t] of Object.entries(raw as Record<string, unknown>)) {
+    const day = Number(d);
+    if (!Number.isInteger(day) || day < 0 || day > 6) return null;
+    if (typeof t !== 'string' || !HHMM.test(t)) return null;
+    mapping[day] = t;
+  }
+  return mapping;
+}
+
+export class InvalidScheduleError extends Error {}
+
 class RebootSchedulerService {
   private schedule: RebootSchedule;
   private tasks: cron.ScheduledTask[] = [];
@@ -27,7 +48,11 @@ class RebootSchedulerService {
     this.configPath = path.join(configDir, '.reboot_schedule.json');
     
     this.schedule = this.loadSchedule();
-    this.updateCronJob();
+    try {
+      this.updateCronJob();
+    } catch (error) {
+      console.error('[Scheduler] Failed to schedule reboot jobs:', error);
+    }
   }
 
   private loadSchedule(): RebootSchedule {
@@ -46,9 +71,14 @@ class RebootSchedulerService {
           });
         }
 
-        return { 
-          enabled: parsed.enabled || false,
-          mapping
+        const clean = sanitizeMapping(mapping);
+        if (!clean) {
+          console.error('[Scheduler] Stored schedule is invalid, ignoring it');
+          return { ...DEFAULT_SCHEDULE };
+        }
+        return {
+          enabled: parsed.enabled === true,
+          mapping: clean
         };
       } catch (error) {
         console.error('[Scheduler] Failed to load schedule:', error);
@@ -70,11 +100,18 @@ class RebootSchedulerService {
     return this.schedule;
   }
 
-  updateSchedule(newSchedule: Partial<RebootSchedule>): RebootSchedule {
-    // We only expect 'enabled' and 'mapping' in the new schedule
-    this.schedule = { 
-      ...this.schedule,
-      ...newSchedule 
+  updateSchedule(newSchedule: unknown): RebootSchedule {
+    const body = (newSchedule && typeof newSchedule === 'object' ? newSchedule : {}) as Record<string, unknown>;
+    const mapping = 'mapping' in body ? sanitizeMapping(body.mapping) : this.schedule.mapping;
+    if (!mapping) {
+      throw new InvalidScheduleError('Planning invalide : jours 0-6 et heures au format HH:MM attendus');
+    }
+    if ('enabled' in body && typeof body.enabled !== 'boolean') {
+      throw new InvalidScheduleError('Le champ "enabled" doit être un booléen');
+    }
+    this.schedule = {
+      enabled: 'enabled' in body ? body.enabled === true : this.schedule.enabled,
+      mapping
     };
 
     this.saveSchedule();
@@ -97,7 +134,8 @@ class RebootSchedulerService {
       const day = parseInt(dayStr, 10);
       if (isNaN(day) || !time) return;
 
-      const [hour, minute] = time.split(':');
+      if (isNaN(day) || day < 0 || day > 6 || typeof time !== 'string' || !HHMM.test(time)) return;
+      const [hour, minute] = time.split(':').map((v) => parseInt(v, 10));
       const cronExpression = `${minute} ${hour} * * ${day}`;
 
       if (cron.validate(cronExpression)) {

@@ -2,6 +2,8 @@ import { WebSocketServer, WebSocket } from 'ws';
 import type { WebSocket as WsType } from 'ws';
 import { freeboxApi } from './freeboxApi.js';
 import { normalizeSystemInfo } from './apiNormalizer.js';
+import type { IncomingMessage } from 'http';
+import { isAuthenticated, isSameOrigin } from '../middleware/dashboardAuth.js';
 
 interface ConnectionStatus {
   type: string;
@@ -47,7 +49,13 @@ class ConnectionWebSocketService {
   init(server: import('http').Server) {
     console.log('[WS] Initializing WebSocket server...');
 
-    this.wss = new WebSocketServer({ server, path: '/ws/connection' });
+    // SECURITY: require a dashboard session and a same-origin Origin header
+    // (browsers don't apply CORS to WebSockets — cross-site WS hijacking).
+    this.wss = new WebSocketServer({
+      server,
+      path: '/ws/connection',
+      verifyClient: ({ req }: { req: IncomingMessage }) => isSameOrigin(req) && isAuthenticated(req)
+    });
 
     console.log('[WS] WebSocket server created on path /ws/connection');
 

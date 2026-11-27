@@ -6,6 +6,7 @@ import http from 'http';
 import { fileURLToPath } from 'url';
 import { config } from './config.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { requireDashboardAuth, dashboardAuthRouter } from './middleware/dashboardAuth.js';
 import { connectionWebSocket } from './services/connectionWebSocket.js';
 import { freeboxNativeWebSocket } from './services/freeboxNativeWebSocket.js';
 
@@ -33,16 +34,55 @@ import dhcpRoutes from './routes/dhcp.js';
 
 const app = express();
 
-// Middleware
-// In production (Docker), allow all origins since frontend is served from same server
-// In development, restrict to known dev ports
-const corsOrigin = process.env.NODE_ENV === 'production'
-  ? true  // Allow all origins in production (frontend served from same origin)
-  : ['http://localhost:3000', 'http://localhost:5173'];
-app.use(cors({
-  origin: corsOrigin,
-  credentials: true
-}));
+// Trust X-Forwarded-* only when explicitly behind a reverse proxy
+if (process.env.TRUST_PROXY) {
+  app.set('trust proxy', process.env.TRUST_PROXY);
+}
+app.disable('x-powered-by');
+
+// SECURITY: the frontend is served from the same origin in production, so no
+// CORS is needed there. Upstream used `origin: true` (reflect any origin with
+// credentials), which let any website read the API. Dev keeps the Vite ports.
+if (process.env.NODE_ENV !== 'production') {
+  app.use(cors({
+    origin: ['http://localhost:3000', 'http://localhost:5173'],
+    credentials: true
+  }));
+}
+
+// Freebox origins allowed for images (TV channel logos are served by the box)
+const freeboxImgSources = Array.from(new Set([
+  'https://mafreebox.freebox.fr',
+  new URL(config.freebox.url).origin,
+  `https://${config.freebox.localIp}`,
+  `http://${config.freebox.localIp}`
+])).join(' ');
+
+// Security headers
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader(
+    'Content-Security-Policy',
+    [
+      "default-src 'self'",
+      "script-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+      `img-src 'self' data: blob: https://img.logo.dev https://cdn.jsdelivr.net ${freeboxImgSources}`,
+      "connect-src 'self' ws: wss:",
+      "media-src 'self' blob:",
+      "font-src 'self' data:",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "object-src 'none'"
+    ].join('; ')
+  );
+  next();
+});
+
 app.use(express.json({ limit: '10mb' }));
 
 // Request logging
@@ -50,6 +90,10 @@ app.use((req, _res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
   next();
 });
+
+// SECURITY: every /api route requires a dashboard session (except health + login)
+app.use('/api', requireDashboardAuth);
+app.use('/api/dashboard-auth', dashboardAuthRouter);
 
 // API Routes
 app.use('/api/auth', authRoutes);
@@ -108,7 +152,9 @@ connectionWebSocket.init(server);
 
 // Start server
 const port = config.port;
-const host = '0.0.0.0'; // Bind to all interfaces for Docker compatibility
+// Bind to all interfaces by default (needed inside Docker); set HOST=127.0.0.1
+// when running directly on a machine to keep the dashboard local-only.
+const host = process.env.HOST || '0.0.0.0';
 server.listen(port, host, () => {
   console.log(`
 ╔═══════════════════════════════════════════════════════════╗

@@ -1,14 +1,38 @@
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/errorHandler.js';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
+import { isIP } from 'net';
 import { promisify } from 'util';
 import { freeboxApi } from '../services/freeboxApi.js';
 
-const execAsync = promisify(exec);
+// SECURITY: execFile (no shell) + strict target validation.
+// The previous implementation interpolated user input into a shell command
+// (`exec(\`ping ... ${target}\`)`), allowing arbitrary command execution.
+const execFileAsync = promisify(execFile);
 const router = Router();
 
 const isWindows = process.platform === 'win32';
 const PING_FLAG = isWindows ? '-n' : '-c';
+const DEFAULT_PING_TARGET = '8.8.8.8';
+const HOSTNAME_RE = /^(?=.{1,253}$)(?!-)[a-zA-Z0-9-]{1,63}(?<!-)(\.(?!-)[a-zA-Z0-9-]{1,63}(?<!-))*$/;
+
+function sanitizePingTarget(raw: unknown): string | null {
+  if (raw === undefined || raw === null || raw === '') return DEFAULT_PING_TARGET;
+  if (typeof raw !== 'string') return null;
+  const target = raw.trim();
+  if (isIP(target) || HOSTNAME_RE.test(target)) return target;
+  return null;
+}
+
+function clampInt(raw: unknown, def: number, min: number, max: number): number {
+  const n = parseInt(String(raw), 10);
+  if (!Number.isFinite(n)) return def;
+  return Math.max(min, Math.min(n, max));
+}
+
+function runPing(target: string, count: number, timeout: number) {
+  return execFileAsync('ping', [PING_FLAG, String(count), target], { timeout });
+}
 
 interface PingResult {
   target: string;
@@ -102,14 +126,19 @@ function parsePingOutput(output: string, times?: number[]): { avg: number; mdev:
 
 // GET /api/speedtest/ping - Run ping test to measure latency and jitter
 router.get('/ping', asyncHandler(async (req, res) => {
-  const target = (req.query.target as string) || '8.8.8.8'; // Google DNS as default
-  const count = Math.min(parseInt(req.query.count as string) || 10, 20); // Max 20 pings
+  const target = sanitizePingTarget(req.query.target);
+  const count = clampInt(req.query.count, 10, 1, 20); // Max 20 pings
+
+  if (!target) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'invalid_target', message: 'Cible de ping invalide' }
+    });
+  }
 
   try {
-    // Run ping command
-    const { stdout } = await execAsync(`ping ${PING_FLAG} ${count} ${target}`, {
-      timeout: 30000
-    });
+    // Run ping command (no shell)
+    const { stdout } = await runPing(target, count, 30000);
 
     const stats = parsePingOutput(stdout);
 
@@ -183,7 +212,15 @@ router.get('/bandwidth', asyncHandler(async (_req, res) => {
 
 // POST /api/speedtest/run - Run a full speedtest
 router.post('/run', asyncHandler(async (req, res) => {
-  const { pingTarget = '8.8.8.8', samples = 10 } = req.body;
+  const pingTarget = sanitizePingTarget(req.body?.pingTarget);
+  const samples = clampInt(req.body?.samples, 10, 1, 15);
+
+  if (!pingTarget) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'invalid_target', message: 'Cible de ping invalide' }
+    });
+  }
 
   try {
     // Step 1: Ping test
@@ -195,7 +232,7 @@ router.post('/run', asyncHandler(async (req, res) => {
     };
 
     try {
-      const { stdout } = await execAsync(`ping ${PING_FLAG} 10 ${pingTarget}`, { timeout: 15000 });
+      const { stdout } = await runPing(pingTarget, 10, 15000);
       const stats = parsePingOutput(stdout);
       pingResult = {
         target: pingTarget,
