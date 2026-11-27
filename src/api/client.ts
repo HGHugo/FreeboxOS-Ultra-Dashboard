@@ -35,6 +35,12 @@ class ApiClient {
       const response = await fetch(url, options);
       const data = await response.json();
 
+      // Dashboard session expired → reload to show the password gate
+      if (response.status === 401 && data?.error?.code === 'DASHBOARD_AUTH_REQUIRED') {
+        window.location.reload();
+        return { success: false, error: { code: 'DASHBOARD_AUTH_REQUIRED', message: data.error.message } };
+      }
+
       // Check for Freebox auth_required error (session expired or permissions changed)
       if (data && !data.success && data.error_code === 'auth_required') {
         console.warn(`[API] Auth required for ${method} ${endpoint}: session expired or permissions changed`);

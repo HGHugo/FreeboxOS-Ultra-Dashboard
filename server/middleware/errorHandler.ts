@@ -14,7 +14,8 @@ export const errorHandler = (
   console.error('[Error]', err.message);
 
   const statusCode = err.statusCode || 500;
-  const message = err.message || 'Internal server error';
+  // SECURITY: don't leak internal error details to the client for 5xx
+  const message = statusCode >= 500 ? 'Internal server error' : (err.message || 'Error');
   const code = err.code || 'INTERNAL_ERROR';
 
   res.status(statusCode).json({

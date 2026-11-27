@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { QrCode, X, Copy, Check, Wifi, Eye, EyeOff } from 'lucide-react';
+import QRCode from 'qrcode';
 import { Toggle } from '../ui/Toggle';
 import type { WifiNetwork } from '../../types';
 
@@ -30,9 +31,13 @@ const QrCodeModal: React.FC<{
   useEffect(() => {
     if (password.length >= 8) {
       const wifiString = generateWifiString(network.ssid, password);
-      // Use QR Server API to generate QR code
-      const encodedData = encodeURIComponent(wifiString);
-      setQrUrl(`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodedData}&bgcolor=ffffff&color=000000&margin=10`);
+      // SECURITY: generate the QR code locally. Upstream sent the SSID and the
+      // Wi-Fi password to api.qrserver.com (third party) in the URL.
+      let cancelled = false;
+      QRCode.toDataURL(wifiString, { width: 200, margin: 2, color: { dark: '#000000', light: '#ffffff' } })
+        .then((url) => { if (!cancelled) setQrUrl(url); })
+        .catch(() => { if (!cancelled) setQrUrl(null); });
+      return () => { cancelled = true; };
     } else {
       setQrUrl(null);
     }

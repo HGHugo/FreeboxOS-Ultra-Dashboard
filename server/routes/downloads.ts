@@ -113,9 +113,25 @@ router.post('/', asyncHandler(async (req, res) => {
   const { url, downloadDir, fileBase64, filename } = req.body;
 
   // If fileBase64 is provided, use file upload method
+  // SECURITY: validate before building the multipart body (CRLF / header injection)
+  if (downloadDir !== undefined && downloadDir !== null && downloadDir !== '' &&
+      (typeof downloadDir !== 'string' || !/^[A-Za-z0-9+/=]{1,4096}$/.test(downloadDir))) {
+    throw createError('Invalid download directory', 400, 'INVALID_DIR');
+  }
+
   if (fileBase64 && filename) {
+    if (typeof filename !== 'string' || filename.length > 255 || /[\r\n"\\\u0000-\u001f]/.test(filename)) {
+      throw createError('Invalid filename', 400, 'INVALID_FILENAME');
+    }
+    if (typeof fileBase64 !== 'string') {
+      throw createError('Invalid file', 400, 'INVALID_FILE');
+    }
     // Convert base64 to Buffer
     const fileBuffer = Buffer.from(fileBase64, 'base64');
+    // A .torrent is a bencoded dictionary: starts with "d", and is small
+    if (fileBuffer.length === 0 || fileBuffer.length > 5 * 1024 * 1024 || fileBuffer[0] !== 0x64) {
+      throw createError('Not a valid .torrent file', 400, 'INVALID_TORRENT');
+    }
     const result = await freeboxApi.addDownloadFromFile(fileBuffer, filename, downloadDir);
     res.json(result);
     return;

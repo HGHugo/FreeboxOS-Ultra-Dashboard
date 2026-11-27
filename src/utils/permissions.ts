@@ -26,7 +26,7 @@ export const getFreeboxSettingsUrl = (freeboxUrl: string): string => {
     return `${url.protocol}//${url.host}/#Fbx.os.app.settings.Accounts`;
   } catch {
     // Fallback to default
-    return 'http://mafreebox.freebox.fr/#Fbx.os.app.settings.Accounts';
+    return 'https://mafreebox.freebox.fr/#Fbx.os.app.settings.Accounts';
   }
 };
 
